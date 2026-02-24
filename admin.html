@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin</title>
+</head>
+<body>
+
+<h2>Přidat restauraci</h2>
+
+<input type="text" id="name" placeholder="Název restaurace">
+<input type="text" id="url" placeholder="URL menu (PDF nebo obrázek)">
+<button onclick="addRestaurant()">Uložit</button>
+
+<script>
+const PASSWORD = "H3510";
+
+const entered = prompt("Zadej heslo:");
+if (entered !== PASSWORD) {
+  alert("Špatné heslo");
+  window.location.href = "/";
+}
+
+async function addRestaurant() {
+  const name = document.getElementById("name").value;
+  const url = document.getElementById("url").value;
+
+  await fetch('/api/getMenus', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, url })
+  });
+
+  alert("Restaurace přidána");
+}
+</script>
+
+</body>
+</html>
