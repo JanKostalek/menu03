@@ -3,14 +3,21 @@
 <head>
   <meta charset="UTF-8">
   <title>Admin</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
 <h2>Přidat restauraci</h2>
 
-<input type="text" id="name" placeholder="Název restaurace">
-<input type="text" id="url" placeholder="URL menu (PDF nebo obrázek)">
-<button onclick="addRestaurant()">Uložit</button>
+<div class="buttons">
+  <button onclick="goBack()">← Zpět na menu</button>
+</div>
+
+<div class="restaurant">
+  <input type="text" id="name" placeholder="Název restaurace" style="width:100%;padding:10px;margin:6px 0;">
+  <input type="text" id="url" placeholder="URL menu (HTML/PDF/obrázek)" style="width:100%;padding:10px;margin:6px 0;">
+  <button onclick="addRestaurant()">Uložit</button>
+</div>
 
 <script>
 const PASSWORD = "H3510";
@@ -21,17 +28,35 @@ if (entered !== PASSWORD) {
   window.location.href = "/";
 }
 
-async function addRestaurant() {
-  const name = document.getElementById("name").value;
-  const url = document.getElementById("url").value;
+function goBack() {
+  window.location.href = "/";
+}
 
-  await fetch('/api/getMenus', {
+async function addRestaurant() {
+  const name = document.getElementById("name").value.trim();
+  const url = document.getElementById("url").value.trim();
+
+  if (!name || !url) {
+    alert("Vyplň název i URL.");
+    return;
+  }
+
+  const resp = await fetch('/api/restaurants', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, url })
   });
 
-  alert("Restaurace přidána");
+  const data = await resp.json().catch(() => ({}));
+
+  if (!resp.ok) {
+    alert("Nepodařilo se uložit: " + (data.error || resp.status));
+    return;
+  }
+
+  alert("Restaurace přidána ✅");
+  // návrat na hlavní stránku (kde se rovnou načte nové menu)
+  window.location.href = "/";
 }
 </script>
 

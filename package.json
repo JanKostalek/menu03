@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@vercel/kv": "^1.0.1",
     "cheerio": "^1.0.0-rc.12"
   }
 }
