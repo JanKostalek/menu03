@@ -2,6 +2,10 @@ import fs from "fs";
 import path from "path";
 import * as cheerio from "cheerio";
 import { kv } from "@vercel/kv";
+import { createRequire } from "module";
+
+const require = createRequire(import.meta.url);
+const pdfParse = require("pdf-parse");
 
 const KV_KEY = "restaurants:list";
 const CZ_DAYS = ["neděle", "pondělí", "úterý", "středa", "čtvrtek", "pátek", "sobota"];
@@ -15,9 +19,14 @@ function normalizeSpaces(s) {
     .trim();
 }
 
-function isProbablyPdfOrImage(url) {
+function isPdf(url) {
   const u = (url || "").toLowerCase();
-  return u.endsWith(".pdf") || /\.(png|jpg|jpeg|webp|gif)(\?.*)?$/.test(u);
+  return u.endsWith(".pdf") || u.includes(".pdf?");
+}
+
+function isImage(url) {
+  const u = (url || "").toLowerCase();
+  return /\.(png|jpg|jpeg|webp|gif)(\?.*)?$/.test(u);
 }
 
 function pickTodayDayCz() {
@@ -50,34 +59,21 @@ function looksLikeNoise(line) {
     t.includes("rezervujte") ||
     t.includes("rezervace") ||
     t.includes("kontakt") ||
-    t.includes("nabídku pro vás připravujeme") ||
     t.includes("informační povinnost") ||
     t.includes("gdpr") ||
-    t.includes("cookies")
+    t.includes("cookies") ||
+    t.includes("alerg") // alergeny často bývají dole jako legenda
   );
 }
 
 /**
- * Univerzální parser pro "textové HTML"
- * - najde "den" (pondělí/úterý/...) z nadpisů nebo řádků
- * - vytvoří položku jídla z textu
- * - cenu vezme buď ze stejného řádku, nebo z následujícího (typicky alergeny + Kč)
+ * Univerzální parser pro "textové řádky"
+ * - den (pondělí/úterý/...) nastaví currentDay
+ * - řádek s cenou vytvoří jídlo s cenou
+ * - řádek bez ceny vytvoří jídlo bez ceny (cena může být na dalším řádku)
+ * - řádek typu "(1,3,7) 179 Kč" doplní cenu k předchozímu jídlu
  */
-function parseTextMenuFromHtml(html) {
-  const $ = cheerio.load(html);
-
-  const nodes = $("h1,h2,h3,h4,li,p,div,span").toArray();
-
-  const lines = [];
-  for (const el of nodes) {
-    const text = normalizeSpaces($(el).text());
-    if (!text) continue;
-
-    text.split("\n").map(normalizeSpaces).forEach((l) => {
-      if (l) lines.push(l);
-    });
-  }
-
+function parseLinesToMeals(lines) {
   let currentDay = null;
   const meals = [];
   let lastMeal = null;
@@ -92,7 +88,7 @@ function parseTextMenuFromHtml(html) {
       continue;
     }
 
-    // pokud je to řádek typu "(1,3,7) 179 Kč" -> doplní cenu k předchozímu jídlu
+    // cena samotná (nebo alergeny+cena) -> doplní k předchozímu
     if (lastMeal && !lastMeal.price) {
       const priceOnly = extractPriceCzk(line);
       if (priceOnly !== null) {
@@ -108,7 +104,7 @@ function parseTextMenuFromHtml(html) {
       }
     }
 
-    // řádek obsahuje cenu i jídlo -> vytvoř meal rovnou
+    // řádek obsahuje cenu i jídlo
     const price = extractPriceCzk(line);
     if (price !== null) {
       const name = stripAllergens(
@@ -124,7 +120,7 @@ function parseTextMenuFromHtml(html) {
       }
     }
 
-    // text bez ceny -> jídlo (cena může být až na dalším řádku)
+    // text bez ceny -> jídlo (cena může být na dalším řádku)
     if (line.length >= 6 && !/^\(?\d/.test(line)) {
       const name = stripAllergens(line);
       lastMeal = { name, price: null, day: currentDay };
@@ -133,51 +129,106 @@ function parseTextMenuFromHtml(html) {
     }
   }
 
-  // odfiltruj řádky, kde jsou naráz vypsané všechny dny ("pondělí úterý středa ...")
-  const cleaned = meals.filter((m) => {
-    const t = m.name.toLowerCase();
+  // odfiltruje řádky, kde jsou vypsané 3+ dny najednou
+  return meals.filter((m) => {
+    const t = (m.name || "").toLowerCase();
     const dayCount = CZ_DAYS.filter((d) => t.includes(d)).length;
     return dayCount < 3;
   });
+}
 
-  return cleaned.filter((m) => !m.name.toLowerCase().includes("nabídku pro vás připravujeme"));
+function parseTextMenuFromHtml(html) {
+  const $ = cheerio.load(html);
+  const nodes = $("h1,h2,h3,h4,li,p,div,span").toArray();
+
+  const lines = [];
+  for (const el of nodes) {
+    const text = normalizeSpaces($(el).text());
+    if (!text) continue;
+    text.split("\n").map(normalizeSpaces).forEach((l) => l && lines.push(l));
+  }
+
+  return parseLinesToMeals(lines);
 }
 
 async function fetchHtml(url) {
   const resp = await fetch(url, {
     headers: {
-      "User-Agent": "menu02-bot/1.0 (+vercel)",
+      "User-Agent": "menu03-bot/1.0 (+vercel)",
       "Accept": "text/html,application/xhtml+xml",
     },
   });
 
-  return {
-    ok: resp.ok,
-    status: resp.status,
-    text: resp.ok ? await resp.text() : "",
-  };
+  return { ok: resp.ok, status: resp.status, text: resp.ok ? await resp.text() : "" };
+}
+
+async function fetchPdfBuffer(url) {
+  const resp = await fetch(url, {
+    headers: {
+      "User-Agent": "menu03-bot/1.0 (+vercel)",
+      "Accept": "application/pdf,*/*",
+    },
+  });
+  if (!resp.ok) return { ok: false, status: resp.status, buf: null };
+
+  const ab = await resp.arrayBuffer();
+  return { ok: true, status: resp.status, buf: Buffer.from(ab) };
+}
+
+async function parsePdfMenu(url) {
+  const { ok, status, buf } = await fetchPdfBuffer(url);
+  if (!ok) return { meals: [], error: `Nepodařilo se načíst PDF (${status})` };
+
+  let text = "";
+  try {
+    const data = await pdfParse(buf);
+    text = normalizeSpaces(data?.text || "");
+  } catch (e) {
+    return { meals: [], error: `PDF parse chyba: ${e?.message || "unknown"}` };
+  }
+
+  // pokud PDF nemá textovou vrstvu, bývá to prázdné
+  if (!text || text.length < 30) {
+    return {
+      meals: [],
+      error: "PDF nejspíš neobsahuje text (scan). Bez OCR to nepřečtu.",
+    };
+  }
+
+  const lines = text.split("\n").map(normalizeSpaces).filter(Boolean);
+  const meals = parseLinesToMeals(lines);
+
+  return { meals, error: null };
 }
 
 async function parseRestaurant(url) {
+  // PDF
+  if (isPdf(url)) {
+    return await parsePdfMenu(url);
+  }
+
+  // obrázek zatím neumíme (bez OCR)
+  if (isImage(url)) {
+    return { meals: [], error: "Menu je obrázek – bez OCR ho zatím nepřečtu." };
+  }
+
+  // HTML
   const primary = await fetchHtml(url);
   if (!primary.ok) return { meals: [], error: `Nepodařilo se načíst (${primary.status})` };
 
   let meals = parseTextMenuFromHtml(primary.text);
 
-  // Speciální fallback pro Kandelábr:
-  // když /poledni-menu/ neobsahuje polední menu (serverově), vezmeme menicka.cz
+  // fallback pro Kandelábr
   try {
     const u = new URL(url);
     const host = u.hostname.replace(/^www\./, "");
     if (meals.length === 0 && host.includes("restaurantkandelabr.cz")) {
       const fallbackUrl = "https://www.menicka.cz/2277-restaurant-kandelabr.html";
       const fb = await fetchHtml(fallbackUrl);
-      if (fb.ok) {
-        meals = parseTextMenuFromHtml(fb.text);
-      }
+      if (fb.ok) meals = parseTextMenuFromHtml(fb.text);
     }
   } catch {
-    // ignore URL parsing errors
+    // ignore
   }
 
   return { meals, error: null };
@@ -198,7 +249,7 @@ async function readRestaurantsFromKVOrFallback() {
     const fromKv = await kv.get(KV_KEY);
     if (Array.isArray(fromKv) && fromKv.length > 0) return fromKv;
   } catch {
-    // když KV není nastavené, ignorujeme a jedeme fallback
+    // KV může být nedostupné lokálně
   }
   return fallback;
 }
@@ -213,21 +264,6 @@ export default async function handler(req, res) {
   for (const r of restaurants) {
     try {
       if (!r?.name || !r?.url) continue;
-
-      if (isProbablyPdfOrImage(r.url)) {
-        out.push({
-          name: r.name,
-          meals: [
-            {
-              name: "Menu je PDF/obrázek – parsování zatím není zapnuté.",
-              price: null,
-              day: null,
-              calories: null,
-            },
-          ],
-        });
-        continue;
-      }
 
       const { meals, error } = await parseRestaurant(r.url);
 
