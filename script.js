@@ -131,7 +131,6 @@ function renderFilters() {
       renderFilters();
       renderMenus();
 
-      // když menu ještě není načtené, dotáhni ho
       if (!menuLoading && (!menusCache || menusCache.length === 0)) {
         await loadMenus(currentType);
       }
@@ -251,7 +250,6 @@ async function loadMenus(type) {
 
   try {
     const res = await fetch("/api/getMenus?type=" + encodeURIComponent(currentType));
-
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
       throw new Error(`API /api/getMenus selhalo (${res.status}). ${txt}`.slice(0, 300));
@@ -286,7 +284,6 @@ function renderMenus() {
   }
 
   if (!menusCache || menusCache.length === 0) {
-    // pokud uživatel má něco vybrané, ale nemáme data, je to problém s API/cache
     if (hasAnySelected()) {
       container.innerHTML = `<div class="restaurant"><div class="small-muted">Menu se nepodařilo načíst. Zkus obnovit stránku.</div></div>`;
     } else {
@@ -305,8 +302,47 @@ function renderMenus() {
   filteredRestaurants.forEach((r) => {
     const div = document.createElement("div");
     div.className = "restaurant";
-    div.innerHTML = `<h3>${escapeHtml(r.name)}</h3>`;
 
+    const source = r.source || null;
+
+    // Nadpis + zdroj link
+    const sourceLink = r.url
+      ? `<div class="small-muted">Zdroj: <a href="${escapeHtmlAttr(r.url)}" target="_blank" rel="noreferrer">otevřít</a></div>`
+      : "";
+
+    div.innerHTML = `<h3>${escapeHtml(r.name)}</h3>${sourceLink}`;
+
+    // PDF / IMAGE: zobrazit originál
+    if (source && (source.type === "pdf" || source.type === "image")) {
+      const url = source.url || r.url || "";
+
+      const wrap = document.createElement("div");
+      wrap.className = "embed-wrap";
+
+      if (source.type === "pdf") {
+        wrap.innerHTML = `
+          <div class="small-muted">
+            PDF menu (pokud se nezobrazí, otevři v novém okně):
+            <a href="${escapeHtmlAttr(url)}" target="_blank" rel="noreferrer">Otevřít PDF</a>
+          </div>
+          <iframe class="pdf-frame" src="${escapeHtmlAttr(url)}"></iframe>
+        `;
+      } else {
+        wrap.innerHTML = `
+          <div class="small-muted">
+            Obrázek menu (pokud se nezobrazí, otevři v novém okně):
+            <a href="${escapeHtmlAttr(url)}" target="_blank" rel="noreferrer">Otevřít obrázek</a>
+          </div>
+          <img class="menu-image" src="${escapeHtmlAttr(url)}" alt="Menu obrázek">
+        `;
+      }
+
+      div.appendChild(wrap);
+      container.appendChild(div);
+      return;
+    }
+
+    // HTML: vypsat meals jako doposud
     (r.meals || []).forEach((m) => {
       const mealDiv = document.createElement("div");
       mealDiv.className = "meal";
@@ -325,7 +361,6 @@ function renderMenus() {
         <div>💰 ${escapeHtml(price)}${calorieLine}</div>
         <hr>
       `;
-
       div.appendChild(mealDiv);
     });
 
@@ -353,6 +388,7 @@ function escapeHtml(str) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
 function escapeHtmlAttr(str) {
   return escapeHtml(str);
 }
