@@ -4,6 +4,7 @@ let currentType = "today";
 
 const COOKIE_FILTERS = "menu03_filters";     // JSON objekt {nameLower: true/false}
 const COOKIE_CALORIES = "menu03_calories";   // "1" / "0"
+const COOKIE_VISITED = "menu03_visited";     // "1" = už někdy navštívil
 
 /* ===== COOKIES HELPERS ===== */
 
@@ -79,11 +80,11 @@ function setFilter(name, enabled) {
 function isEnabledByFilter(name) {
   const filters = loadFilters();
   const key = String(name).toLowerCase();
-  // default: pokud není nastaveno, tak ZOBRAZIT
-  return filters[key] !== false;
+  // default: pokud není nastaveno, tak NEZOBRAZIT (protože první návštěva má být nic)
+  return filters[key] === true;
 }
 
-/* ===== UI: render filtrů (tlačítka, žádné checkboxy) ===== */
+/* ===== UI: render filtrů (tlačítka) ===== */
 
 function renderFilters() {
   const container = document.getElementById("filterContainer");
@@ -123,6 +124,28 @@ function selectAll(enabled) {
   renderMenus();
 }
 
+/* ===== DEFAULT PRO PRVNÍ NÁVŠTĚVU ===== */
+
+function isFirstVisit() {
+  return getCookie(COOKIE_VISITED) !== "1";
+}
+
+function markVisited() {
+  setCookie(COOKIE_VISITED, "1", 365);
+}
+
+function setDefaultFirstVisitState() {
+  // kalorie vypnout
+  setCookie(COOKIE_CALORIES, "0", 365);
+
+  // filtry: všechny restaurace false (nic nevybrané)
+  const filters = {};
+  for (const r of restaurantsList) {
+    if (r?.name) filters[String(r.name).toLowerCase()] = false;
+  }
+  saveFilters(filters);
+}
+
 /* ===== NAČÍTÁNÍ RESTAURACÍ + MENU ===== */
 
 async function loadRestaurantsList() {
@@ -133,6 +156,19 @@ async function loadRestaurantsList() {
   } catch {
     restaurantsList = [];
   }
+
+  // pokud je to první návštěva, nastav defaulty (až po načtení seznamu restaurací)
+  if (isFirstVisit()) {
+    setDefaultFirstVisitState();
+    markVisited();
+  } else {
+    // když cookie pro kalorie ještě neexistuje (okrajově), nastav vypnuto
+    if (getCookie(COOKIE_CALORIES) === null) setCookie(COOKIE_CALORIES, "0", 365);
+    // když cookie pro filtry chybí, necháme vše vypnuto (default isEnabledByFilter == true only)
+    if (getCookie(COOKIE_FILTERS) === null) saveFilters({});
+  }
+
+  updateCaloriesButton();
   renderFilters();
 }
 
@@ -160,7 +196,7 @@ function renderMenus() {
   const filteredRestaurants = (menusCache || []).filter((r) => isEnabledByFilter(r.name));
 
   if (!filteredRestaurants.length) {
-    container.innerHTML = `<div class="restaurant"><div class="small-muted">Podle filtru není vybraná žádná restaurace.</div></div>`;
+    container.innerHTML = `<div class="restaurant"><div class="small-muted">Vyber restauraci vlevo ve filtru.</div></div>`;
     return;
   }
 
@@ -176,7 +212,6 @@ function renderMenus() {
       const price = m.price ? `${m.price} Kč` : "—";
       const day = m.day ? `(${m.day})` : "";
 
-      // když kalorie nejsou zapnuté, nezobrazujeme nic
       let calorieLine = "";
       if (caloriesEnabled()) {
         const kcal = (m.calories ?? "?");
@@ -224,10 +259,6 @@ function escapeHtmlAttr(str) {
 /* ===== INIT ===== */
 
 (async function init() {
-  // výchozí stav cookie pro kalorie (když ještě není)
-  if (getCookie(COOKIE_CALORIES) === null) setCookie(COOKIE_CALORIES, "0", 365);
-
-  updateCaloriesButton();
   await loadRestaurantsList();
   await loadToday();
 })();

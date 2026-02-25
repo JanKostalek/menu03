@@ -88,10 +88,16 @@ button:hover {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-bottom: 15px;
+  margin-bottom: 12px;
 }
 
-/* Filtr tlačítka – stejné jako "Kalorická informace" (bílá / zelená) */
+.filter-hint {
+  font-size: 13px;
+  color: #444;
+  margin: 6px 0 10px 2px;
+  font-weight: 600;
+}
+
 .filter-container {
   display: flex;
   flex-direction: column;
