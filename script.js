@@ -406,8 +406,8 @@ async function loadMenus(type) {
   }
 }
 
-async function loadToday() { await loadMenus("today"); }
-async function loadAll() { await loadMenus("all"); }
+function loadToday() { return loadMenus("today"); }
+function loadAll() { return loadMenus("all"); }
 
 /* ===== RENDER ===== */
 
@@ -479,6 +479,23 @@ function renderMenus() {
       openPopup(url);
     });
   });
+}
+
+/* ===== TOP-RIGHT BUTTONS (index.html) ===== */
+
+function openSuggestion() {
+  // bezpečné (neblokuje popup blocker)
+  window.location.href = "/suggest.html";
+}
+
+function openAdmin() {
+  const PASSWORD = "H3510";
+  const entered = prompt("Zadej heslo pro administraci:");
+  if (entered !== PASSWORD) {
+    alert("Špatné heslo.");
+    return;
+  }
+  window.location.href = "/admin.html";
 }
 
 /* ===== ESCAPE ===== */
