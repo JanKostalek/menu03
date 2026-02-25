@@ -17,9 +17,19 @@ button {
   padding: 10px 15px;
   margin: 5px 5px 5px 0;
   cursor: pointer;
+  border: 1px solid #ccc;
+  background: #e6e6e6;
 }
 
-/* ===== LAYOUT ===== */
+button:hover {
+  opacity: 0.9;
+}
+
+/* aktivní kalorické tlačítko */
+#btnCalories.active {
+  background: #d9fbe1;
+  border-color: #86d39a;
+}
 
 .layout {
   display: flex;
@@ -27,12 +37,10 @@ button {
   align-items: flex-start;
 }
 
-/* ===== SIDEBAR ===== */
-
 .sidebar {
   width: 260px;
   position: sticky;
-  top: 20px;              /* drží se při scrollování */
+  top: 20px;
   align-self: flex-start;
   background: white;
   border: 1px solid #ddd;
@@ -64,8 +72,6 @@ button {
   user-select: none;
   background: #fff;
 }
-
-/* ===== HLAVNÍ OBSAH ===== */
 
 .content {
   flex: 1;

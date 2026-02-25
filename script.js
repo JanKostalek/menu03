@@ -1,11 +1,36 @@
-// Stav aplikace
-let restaurantsList = [];     // seznam restaurací z /api/restaurants (id, name, url)
-let menusCache = [];          // posledně načtený výsledek z /api/getMenus
-let currentType = "today";    // today / all
+let restaurantsList = [];
+let menusCache = [];
+let currentType = "today";
 
-const LS_KEY = "menu03:filters"; // { [restaurantNameLower]: true/false }
+const LS_KEY = "menu03:filters";
+const LS_CALORIES = "menu03:caloriesEnabled";
 
-// ---------- Filtry (localStorage) ----------
+/* ===== KALORIE TOGGLE ===== */
+
+function caloriesEnabled() {
+  return localStorage.getItem(LS_CALORIES) === "1";
+}
+
+function setCaloriesEnabled(v) {
+  localStorage.setItem(LS_CALORIES, v ? "1" : "0");
+  updateCaloriesButton();
+}
+
+function toggleCalories() {
+  setCaloriesEnabled(!caloriesEnabled());
+  renderMenus();
+}
+
+function updateCaloriesButton() {
+  const btn = document.getElementById("btnCalories");
+  if (!btn) return;
+
+  if (caloriesEnabled()) btn.classList.add("active");
+  else btn.classList.remove("active");
+}
+
+/* ===== FILTRY ===== */
+
 function loadFilters() {
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -28,11 +53,9 @@ function setFilter(name, enabled) {
 function isEnabledByFilter(name) {
   const filters = loadFilters();
   const key = String(name).toLowerCase();
-  // default: pokud není nastaveno, tak ZOBRAZIT
   return filters[key] !== false;
 }
 
-// ---------- UI: render filtrů ----------
 function renderFilters() {
   const container = document.getElementById("filterContainer");
   if (!container) return;
@@ -55,12 +78,11 @@ function renderFilters() {
 
   container.innerHTML = html;
 
-  // napojení eventů
   container.querySelectorAll("input[type=checkbox]").forEach(cb => {
     cb.addEventListener("change", (e) => {
       const name = e.target.getAttribute("data-name");
       setFilter(name, e.target.checked);
-      renderMenus(); // okamžitý filtr bez reloadu
+      renderMenus();
     });
   });
 }
@@ -71,11 +93,11 @@ function selectAll(enabled) {
   renderMenus();
 }
 
-// ---------- Načtení seznamu restaurací (pro filtr) ----------
+/* ===== NAČÍTÁNÍ MENU ===== */
+
 async function loadRestaurantsList() {
   try {
     const resp = await fetch("/api/restaurants");
-    if (!resp.ok) throw new Error("GET /api/restaurants " + resp.status);
     const data = await resp.json();
     restaurantsList = Array.isArray(data) ? data : [];
   } catch {
@@ -84,7 +106,6 @@ async function loadRestaurantsList() {
   renderFilters();
 }
 
-// ---------- Načtení menu (jednou) + render ----------
 async function loadToday() {
   currentType = "today";
   await loadMenus("today");
@@ -96,7 +117,6 @@ async function loadAll() {
 }
 
 async function loadMenus(type) {
-  // načteme menu z API (tohle je jediné síťové načtení menu)
   const res = await fetch("/api/getMenus?type=" + encodeURIComponent(type));
   const data = await res.json();
   menusCache = Array.isArray(data) ? data : [];
@@ -107,8 +127,7 @@ function renderMenus() {
   const container = document.getElementById("menuContainer");
   container.innerHTML = "";
 
-  // aplikuj filtr na už načtená data (bez reloadu stránky)
-  const filteredRestaurants = (menusCache || []).filter(r => isEnabledByFilter(r.name));
+  const filteredRestaurants = menusCache.filter(r => isEnabledByFilter(r.name));
 
   if (!filteredRestaurants.length) {
     container.innerHTML = `<div class="restaurant"><div class="small-muted">Podle filtru není vybraná žádná restaurace.</div></div>`;
@@ -126,13 +145,19 @@ function renderMenus() {
 
       const price = m.price ? `${m.price} Kč` : "—";
       const day = m.day ? `(${m.day})` : "";
-      const kcal = (m.calories ?? "?");
+
+      let calorieLine = "";
+      if (caloriesEnabled()) {
+        const kcal = (m.calories ?? "?");
+        calorieLine = ` | 🔥 ${escapeHtml(String(kcal))} kcal`;
+      }
 
       mealDiv.innerHTML = `
         <div><b>${escapeHtml(m.name)}</b> ${escapeHtml(day)}</div>
-        <div>💰 ${escapeHtml(price)} | 🔥 ${escapeHtml(String(kcal))} kcal</div>
+        <div>💰 ${escapeHtml(price)}${calorieLine}</div>
         <hr>
       `;
+
       div.appendChild(mealDiv);
     });
 
@@ -144,7 +169,8 @@ function openAdmin() {
   window.location.href = "/admin.html";
 }
 
-// ---------- mini-escapes ----------
+/* ===== ESCAPE ===== */
+
 function escapeHtml(str) {
   return String(str)
     .replaceAll("&", "&amp;")
@@ -157,11 +183,10 @@ function escapeHtmlAttr(str) {
   return escapeHtml(str);
 }
 
-// ---------- Start ----------
-(async function init() {
-  // 1) nejdřív načti seznam restaurací (pro filtry)
-  await loadRestaurantsList();
+/* ===== INIT ===== */
 
-  // 2) pak načti výchozí menu
+(async function init() {
+  updateCaloriesButton();
+  await loadRestaurantsList();
   await loadToday();
 })();

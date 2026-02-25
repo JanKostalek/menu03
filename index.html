@@ -14,11 +14,11 @@
   <button onclick="loadAll()">Celé menu</button>
   <button onclick="openAdmin()">Přidat restauraci</button>
   <button onclick="openSuggestion()">Návrh restaurace</button>
+  <button id="btnCalories" onclick="toggleCalories()">Kalorická informace</button>
 </div>
 
 <div class="layout">
 
-  <!-- LEVÝ FILTR -->
   <aside class="sidebar">
     <h3>Filtr restaurací</h3>
 
@@ -32,7 +32,6 @@
     </div>
   </aside>
 
-  <!-- HLAVNÍ OBSAH -->
   <main class="content">
     <div id="menuContainer"></div>
   </main>
@@ -41,9 +40,9 @@
 
 <script src="script.js"></script>
 <script>
-  function openSuggestion() {
-    window.open("/suggest.html", "_blank");
-  }
+function openSuggestion() {
+  window.open("/suggest.html", "_blank");
+}
 </script>
 </body>
 </html>
