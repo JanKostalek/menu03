@@ -12,14 +12,13 @@ const LS_MENU_CACHE_ALL = "menu03_menu_cache_all";
 const LS_MENU_CACHE_DATE_TODAY = "menu03_menu_cache_date_today";
 const LS_MENU_CACHE_DATE_ALL = "menu03_menu_cache_date_all";
 
+const LS_RESTAURANTS_SIG = "menu03_restaurants_sig";
+
 /**
  * Domény, které typicky blokují vložení do iframe (X-Frame-Options / CSP).
- * Sem si můžeš postupně přidávat další problematické domény.
  */
 const EMBED_BLOCKED_DOMAINS = [
   "holidayinn.cz",
-  // přidej další dle potřeby:
-  // "restauracesalanda.cz",
 ];
 
 /* ===== COOKIES HELPERS ===== */
@@ -111,7 +110,32 @@ function iconExternal() {
   return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7h-2V6.41l-9.29 9.3-1.42-1.42 9.3-9.29H14V3z"></path><path d="M5 5h6v2H7v10h10v-4h2v6H5V5z"></path></svg>`;
 }
 
-/* ===== SOURCE BLOCK ===== */
+/* ===== CACHE HELPERS ===== */
+
+function clearLocalMenuCache() {
+  try {
+    localStorage.removeItem(LS_MENU_CACHE_TODAY);
+    localStorage.removeItem(LS_MENU_CACHE_ALL);
+    localStorage.removeItem(LS_MENU_CACHE_DATE_TODAY);
+    localStorage.removeItem(LS_MENU_CACHE_DATE_ALL);
+  } catch {}
+}
+
+function computeRestaurantsSig(list) {
+  try {
+    const slim = (list || []).map(r => ({
+      id: r.id || "",
+      name: r.name || "",
+      url: r.url || "",
+      mode: (r.mode || "parse")
+    }));
+    return JSON.stringify(slim);
+  } catch {
+    return "";
+  }
+}
+
+/* ===== SOURCE BLOCKS ===== */
 
 function buildPdfBlock(url) {
   const wrap = document.createElement("div");
@@ -160,18 +184,12 @@ function buildImageBlock(url) {
   return wrap;
 }
 
-/**
- * HTML/WEB zdroj – hybrid:
- * - pokud mode=embed → pokus o iframe, jinak varování + tlačítko
- * - pokud mode=parse → jen tlačítko (aby UI nebylo přeplněné), iframe jen když chceš (lze snadno změnit)
- */
 function buildWebBlock(url, mode) {
   const wrap = document.createElement("div");
   wrap.className = "source-block";
 
   const blocked = isEmbedBlocked(url);
 
-  // vždy nabízíme tlačítko
   let inner = `
     <div class="source-actions">
       <button type="button" class="btn-action js-open-popup" data-url="${escapeHtmlAttr(url)}">
@@ -180,7 +198,6 @@ function buildWebBlock(url, mode) {
     </div>
   `;
 
-  // embed režim → snažíme se vložit stránku do iframe (stejně jako PDF)
   if (String(mode || "").toLowerCase() === "embed") {
     if (blocked) {
       inner += `
@@ -204,7 +221,7 @@ function buildWebBlock(url, mode) {
   return wrap;
 }
 
-/* ===== FILTRY (COOKIE) ===== */
+/* ===== FILTRY ===== */
 
 function loadFilters() {
   try {
@@ -277,13 +294,10 @@ function selectAll(enabled) {
   restaurantsList.forEach((r) => setFilter(r.name, enabled));
   renderFilters();
   renderMenus();
-
-  if (!menuLoading && (!menusCache || menusCache.length === 0)) {
-    loadMenus(currentType);
-  }
+  if (!menuLoading && (!menusCache || menusCache.length === 0)) loadMenus(currentType);
 }
 
-/* ===== DEFAULT PRO PRVNÍ NÁVŠTĚVU ===== */
+/* ===== FIRST VISIT ===== */
 
 function isFirstVisit() {
   return getCookie(COOKIE_VISITED) !== "1";
@@ -295,13 +309,11 @@ function markVisited() {
 
 function setDefaultFirstVisitState() {
   const f = {};
-  restaurantsList.forEach(r => {
-    if (r?.name) f[String(r.name).toLowerCase()] = false;
-  });
+  restaurantsList.forEach(r => { if (r?.name) f[String(r.name).toLowerCase()] = false; });
   saveFilters(f);
 }
 
-/* ===== RESTAURACE LIST (API) ===== */
+/* ===== RESTAURANTS LIST ===== */
 
 async function loadRestaurantsList() {
   try {
@@ -311,6 +323,16 @@ async function loadRestaurantsList() {
   } catch {
     restaurantsList = [];
   }
+
+  // pokud se změnil seznam restaurací => vymaž lokální menu cache
+  try {
+    const sig = computeRestaurantsSig(restaurantsList);
+    const prev = localStorage.getItem(LS_RESTAURANTS_SIG) || "";
+    if (sig && sig !== prev) {
+      clearLocalMenuCache();
+      localStorage.setItem(LS_RESTAURANTS_SIG, sig);
+    }
+  } catch {}
 
   if (isFirstVisit()) {
     setDefaultFirstVisitState();
@@ -336,7 +358,6 @@ function loadLocalCache(type) {
     const raw = localStorage.getItem(getCacheKey(type));
     const date = localStorage.getItem(getDateKey(type));
     if (!raw || !date) return null;
-
     if (type === "today" && date !== todayISO()) return null;
 
     const data = JSON.parse(raw);
@@ -351,12 +372,10 @@ function saveLocalCache(type, data) {
   try {
     localStorage.setItem(getCacheKey(type), JSON.stringify(data || []));
     localStorage.setItem(getDateKey(type), todayISO());
-  } catch {
-    // ignore
-  }
+  } catch {}
 }
 
-/* ===== LOAD MENUS (API) ===== */
+/* ===== LOAD MENUS ===== */
 
 async function loadMenus(type) {
   currentType = type;
@@ -373,7 +392,7 @@ async function loadMenus(type) {
   }
 
   try {
-    const resp = await fetch("/api/getMenus?type=" + encodeURIComponent(type));
+    const resp = await fetch("/api/getMenus?type=" + encodeURIComponent(type), { cache: "no-store" });
     const data = await resp.json();
     if (!Array.isArray(data)) throw new Error("API vrátilo neočekávaný formát");
     menusCache = data;
@@ -387,15 +406,10 @@ async function loadMenus(type) {
   }
 }
 
-async function loadToday() {
-  await loadMenus("today");
-}
+async function loadToday() { await loadMenus("today"); }
+async function loadAll() { await loadMenus("all"); }
 
-async function loadAll() {
-  await loadMenus("all");
-}
-
-/* ===== RENDER MENUS ===== */
+/* ===== RENDER ===== */
 
 function renderMenus() {
   const container = document.getElementById("menuContainer");
@@ -414,22 +428,18 @@ function renderMenus() {
   }
 
   if (!menusCache || menusCache.length === 0) {
-    if (hasAnySelected()) {
-      container.innerHTML = `<div class="restaurant"><div class="small-muted">Menu se nepodařilo načíst. Zkus obnovit stránku.</div></div>`;
-    } else {
-      container.innerHTML = `<div class="restaurant"><div class="small-muted">Vyber restauraci vlevo.</div></div>`;
-    }
+    container.innerHTML = `<div class="restaurant"><div class="small-muted">${hasAnySelected() ? "Menu se nepodařilo načíst. Zkus obnovit stránku." : "Vyber restauraci vlevo."}</div></div>`;
     return;
   }
 
-  const filteredRestaurants = menusCache.filter(r => isEnabledByFilter(r.name));
+  const filtered = menusCache.filter(r => isEnabledByFilter(r.name));
 
-  if (!filteredRestaurants.length) {
+  if (!filtered.length) {
     container.innerHTML = `<div class="restaurant"><div class="small-muted">Vyber restauraci vlevo.</div></div>`;
     return;
   }
 
-  filteredRestaurants.forEach((r) => {
+  filtered.forEach((r) => {
     const div = document.createElement("div");
     div.className = "restaurant";
     div.innerHTML = `<h3>${escapeHtml(r.name)}</h3>`;
@@ -443,31 +453,25 @@ function renderMenus() {
       else div.appendChild(buildWebBlock(url, mode));
     }
 
-    // Parsovaná jídla se zobrazí jen když existují
     const meals = Array.isArray(r.meals) ? r.meals : [];
     if (meals.length) {
       meals.forEach((m) => {
         const mealDiv = document.createElement("div");
         mealDiv.className = "meal";
-
         const price = m.price ? `${m.price} Kč` : "—";
         const day = m.day ? `(${m.day})` : "";
-
         mealDiv.innerHTML = `
           <div><b>${escapeHtml(m.name)}</b> ${escapeHtml(day)}</div>
           <div>💰 ${escapeHtml(price)}</div>
           <hr>
         `;
-
         div.appendChild(mealDiv);
       });
     }
 
-    // když je mode=parse a nic se nenašlo, necháme UI čisté (jen zdrojový embed/tlačítko)
     container.appendChild(div);
   });
 
-  // popup tlačítka (PDF i web)
   container.querySelectorAll(".js-open-popup").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       const url = e.currentTarget.getAttribute("data-url");
@@ -475,16 +479,6 @@ function renderMenus() {
       openPopup(url);
     });
   });
-}
-
-/* ===== NAVIGACE ===== */
-
-function openAdmin() {
-  window.location.href = "/admin.html";
-}
-
-function openSuggestion() {
-  window.open("/suggest.html", "_blank");
 }
 
 /* ===== ESCAPE ===== */
@@ -497,12 +491,9 @@ function escapeHtml(str) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
-function escapeHtmlAttr(str) {
-  return escapeHtml(str);
-}
+function escapeHtmlAttr(str) { return escapeHtml(str); }
 
 /* ===== INIT ===== */
-
 (async function init() {
   await loadRestaurantsList();
   await loadToday();

@@ -14,20 +14,12 @@ function readFallbackJson() {
 }
 
 function makeId() {
-  return (
-    Date.now().toString(36) +
-    "-" +
-    Math.random().toString(36).slice(2, 10)
-  );
+  return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
 }
 
-function normalizeMode(mode, url) {
+function normalizeMode(mode) {
   const m = String(mode || "").trim().toLowerCase();
   if (m === "embed" || m === "parse") return m;
-
-  // default:
-  // - HTML: parse
-  // - PDF/obrázek: parse/embed je v podstatě jedno, frontend to stejně řeší jako zdroj
   return "parse";
 }
 
@@ -37,8 +29,7 @@ function normalizeRestaurant(r) {
   const url = String(r.url || "").trim();
   if (!name || !url) return null;
 
-  const mode = normalizeMode(r.mode, url);
-
+  const mode = normalizeMode(r.mode);
   return { id: r.id || makeId(), name, url, mode };
 }
 
@@ -52,7 +43,7 @@ async function readList() {
       return normalized.length ? normalized : fallback;
     }
   } catch {
-    // KV nemusí být dostupné v lokálu – fallback
+    // lokálně bez KV fallback
   }
 
   return fallback;
@@ -60,6 +51,11 @@ async function readList() {
 
 async function writeList(list) {
   await kv.set(KEY, list);
+
+  // "seznam restaurací se změnil" => invalidate menu cache
+  const now = Date.now();
+  await kv.set("restaurants:updatedAt", now);
+  await kv.set("menus:cacheBuster", now);
 }
 
 export default async function handler(req, res) {
@@ -80,7 +76,7 @@ export default async function handler(req, res) {
         id: makeId(),
         name: String(name).trim(),
         url: String(url).trim(),
-        mode: normalizeMode(mode, url),
+        mode: normalizeMode(mode),
       },
     ];
 

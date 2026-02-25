@@ -5,13 +5,37 @@
   <title>Admin - Restaurace</title>
   <link rel="stylesheet" href="style.css" />
   <style>
+    .topbar {
+      display:flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 10px 0 15px 0;
+      gap: 10px;
+    }
+
     .row { display:flex; gap:10px; flex-wrap:wrap; }
     .row input, .row select { flex: 1 1 320px; padding:10px; margin:6px 0; }
+
     .list-item { display:flex; gap:10px; align-items:center; justify-content:space-between; }
     .list-left { min-width: 0; }
     .muted { color:#666; font-size: 12px; word-break: break-all; }
+
     .danger { background:#b00020; color:white; border:none; padding:8px 10px; cursor:pointer; }
     .danger:hover { opacity:0.9; }
+
+    .btn {
+      padding: 8px 12px;
+      border: 1px solid #bbb;
+      background: #e6e6e6;
+      cursor: pointer;
+      border-radius: 6px;
+    }
+    .btn:hover { background:#dcdcdc; }
+
+    .btn-recache {
+      font-weight: 700;
+    }
+
     .ok { color: #0b7a0b; }
     .section { border:1px solid #ccc; padding:15px; margin-top:20px; background:#fff; border-radius:8px; }
     .kv { word-break: break-word; }
@@ -22,8 +46,10 @@
 
 <h2>Admin – Restaurace</h2>
 
-<div class="buttons">
-  <button onclick="goBack()">← Zpět na menu</button>
+<div class="topbar">
+  <button class="btn" onclick="goBack()">← Zpět na menu</button>
+
+  <button class="btn btn-recache" onclick="reCacheAll()">ReCache</button>
 </div>
 
 <div class="section">
@@ -37,7 +63,7 @@
     </select>
   </div>
   <div class="row">
-    <button onclick="addRestaurant()">Uložit</button>
+    <button class="btn" onclick="addRestaurant()">Uložit</button>
     <span id="status" class="muted"></span>
   </div>
   <div class="muted">
@@ -45,7 +71,6 @@
   </div>
 </div>
 
-<!-- NOVÉ: NÁVRHY -->
 <div class="section">
   <h3>Návrhy restaurací</h3>
   <div id="suggestions" class="muted">Načítám…</div>
@@ -73,19 +98,26 @@ const statusEl = document.getElementById("status");
 const listEl = document.getElementById("list");
 const suggestionsEl = document.getElementById("suggestions");
 
+// stejné klíče jako v script.js (hlavní stránka)
+const LS_MENU_CACHE_TODAY = "menu03_menu_cache_today";
+const LS_MENU_CACHE_ALL = "menu03_menu_cache_all";
+const LS_MENU_CACHE_DATE_TODAY = "menu03_menu_cache_date_today";
+const LS_MENU_CACHE_DATE_ALL = "menu03_menu_cache_date_all";
+const LS_RESTAURANTS_SIG = "menu03_restaurants_sig";
+
 function setStatus(msg, isOk=false) {
   statusEl.textContent = msg || "";
   statusEl.className = "muted" + (isOk ? " ok" : "");
 }
 
 async function fetchRestaurants() {
-  const resp = await fetch("/api/restaurants");
+  const resp = await fetch("/api/restaurants", { cache: "no-store" });
   if (!resp.ok) throw new Error("GET /api/restaurants " + resp.status);
   return await resp.json();
 }
 
 async function fetchSuggestions() {
-  const resp = await fetch("/api/suggestions");
+  const resp = await fetch("/api/suggestions", { cache: "no-store" });
   if (!resp.ok) throw new Error("GET /api/suggestions " + resp.status);
   return await resp.json();
 }
@@ -195,7 +227,11 @@ async function addRestaurant() {
   document.getElementById("url").value = "";
   document.getElementById("mode").value = "parse";
 
-  setStatus("Uloženo ✅", true);
+  setStatus("Uloženo ✅ (cache se invalidovala automaticky)", true);
+
+  // po změně seznamu restaurací je dobré smazat lokální menu cache
+  clearLocalCacheOnly();
+
   await loadRestaurants();
 }
 
@@ -208,7 +244,10 @@ async function deleteRestaurant(id, name) {
     setStatus("Nepodařilo se smazat: " + (data.error || resp.status), false);
     return;
   }
-  setStatus("Smazáno ✅", true);
+  setStatus("Smazáno ✅ (cache se invalidovala automaticky)", true);
+
+  clearLocalCacheOnly();
+
   await loadRestaurants();
 }
 
@@ -223,6 +262,34 @@ async function deleteSuggestion(id, name) {
   }
 
   await loadSuggestions();
+}
+
+function clearLocalCacheOnly() {
+  try {
+    localStorage.removeItem(LS_MENU_CACHE_TODAY);
+    localStorage.removeItem(LS_MENU_CACHE_ALL);
+    localStorage.removeItem(LS_MENU_CACHE_DATE_TODAY);
+    localStorage.removeItem(LS_MENU_CACHE_DATE_ALL);
+    localStorage.removeItem(LS_RESTAURANTS_SIG);
+  } catch {}
+}
+
+async function reCacheAll() {
+  if (!confirm("ReCache: vyčistit lokální cache a vynutit nové cachování na serveru?")) return;
+
+  setStatus("ReCache: čistím lokální cache…");
+  clearLocalCacheOnly();
+
+  setStatus("ReCache: žádám server o obnovu cache…");
+  const resp = await fetch("/api/recache", { method: "POST" });
+  const data = await resp.json().catch(() => ({}));
+
+  if (!resp.ok) {
+    setStatus("ReCache selhal: " + (data.error || resp.status), false);
+    return;
+  }
+
+  setStatus("ReCache hotovo ✅ (teď jdi zpět na hlavní stránku)", true);
 }
 
 function escapeHtml(str) {
