@@ -1,42 +1,54 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="cs">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Restaurace - Denní menu</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-
-  <div class="header-fixed">
+  <header class="topbar">
     <h1>Restaurace - Denní menu</h1>
 
-    <div class="top-bar">
-      <div class="left-buttons">
-        <button onclick="loadToday()">Dnešní menu</button>
-        <button onclick="loadAll()">Celé menu</button>
+    <div class="topbar__actions">
+      <div class="btn-group">
+        <button id="btnToday" type="button">Dnešní menu</button>
+        <button id="btnAll" type="button">Celé menu</button>
+        <button id="btnSuggest" type="button">Návrh restaurace</button>
       </div>
 
-      <div class="right-buttons">
-        <button onclick="openSuggestion()">Návrh restaurace</button>
-        <button onclick="openAdmin()">Administrace</button>
+      <button id="btnAdmin" class="btn-admin" type="button">Administrace</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <h2>Vyber restauraci</h2>
+
+      <div class="sidebar__tools">
+        <button id="btnSelectAll" type="button">Vybrat vše</button>
+        <button id="btnClear" type="button">Zrušit výběr</button>
       </div>
-    </div>
-  </div>
 
-  <div class="page-wrapper">
-    <div class="sidebar">
-      <h2 class="filter-title">Vyber restauraci</h2>
+      <div id="restaurantsList" class="restaurants"></div>
 
-      <button onclick="selectAll(true)">Vybrat vše</button>
-      <button onclick="selectAll(false)">Zrušit výběr</button>
+      <div class="hint">
+        <div class="hint__title">Tip</div>
+        <div class="hint__text">Můžeš vybrat i více restaurací najednou.</div>
+      </div>
+    </aside>
 
-      <div id="filterContainer"></div>
-    </div>
+    <section class="content">
+      <div class="content__header">
+        <div>
+          <div class="mode" id="modeLabel">Režim: Dnešní menu</div>
+          <div class="sub" id="selectionLabel">Vyber restauraci vlevo.</div>
+        </div>
+      </div>
 
-    <div class="content">
-      <div id="menuContainer"></div>
-    </div>
-  </div>
+      <div id="menusArea" class="menus"></div>
+    </section>
+  </main>
 
   <script src="script.js"></script>
 </body>

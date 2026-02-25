@@ -1,170 +1,209 @@
-:root {
-  --header-h: 120px;
+* { box-sizing: border-box; }
+
+:root{
+  --border:#ddd;
+  --bg:#fff;
+  --muted:#666;
+  --pill:#f6f6f6;
+  --pillActive:#dfffe3;
+  --shadow: 0 2px 10px rgba(0,0,0,.06);
 }
 
-* {
-  box-sizing: border-box;
+body{
+  margin:0;
+  font-family: Arial, sans-serif;
+  color:#111;
+  background:#fafafa;
 }
 
-body {
-  font-family: Arial;
-  margin: 0;
-  background: #fafafa;
-
-  height: 100vh;
-  overflow: hidden;
-}
-
-/* ===== FIXNÍ HORNÍ LIŠTA ===== */
-
-.app-header {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: var(--header-h);
-  background: #fafafa;
-  border-bottom: 1px solid #ddd;
-  z-index: 1000;
-  padding: 18px 20px;
-}
-
-.app-title {
-  margin: 0 0 10px 0;
-}
-
-.top-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-button {
-  padding: 10px 15px;
+button{
+  padding: 8px 12px;
+  border: 1px solid #bbb;
+  background: #eee;
   cursor: pointer;
-  border: 1px solid #ccc;
-  background: #e6e6e6;
+  border-radius: 6px;
+}
+button:hover{ background:#e6e6e6; }
+button:active{ transform: translateY(1px); }
+
+a{ color:#2b63ff; text-decoration: underline; }
+
+/* ===== TOP BAR ===== */
+.topbar{
+  padding: 16px 16px 10px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
 }
 
-button:hover {
-  opacity: 0.9;
+.topbar h1{
+  margin:0 0 12px;
+  font-size: 40px;
+  font-weight: 800;
 }
 
-/* aktivní zelený stav (Kalorie + aktivní filtry) */
-.active-green {
-  background: #d9fbe1 !important;
-  border-color: #86d39a !important;
+.topbar__actions{
+  display:flex;
+  align-items:center;
+  justify-content: space-between; /* admin doprava */
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
-/* ===== TĚLO APP ===== */
+.btn-group{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+}
 
-.app-body {
-  position: fixed;
-  top: var(--header-h);
-  left: 0;
-  right: 0;
-  bottom: 0;
+.btn-admin{
+  margin-left:auto;
+}
 
-  display: flex;
-  gap: 30px;
-  align-items: stretch;
-
-  padding: 20px;
+/* ===== MAIN LAYOUT (2 sloupce) ===== */
+.layout{
+  display:grid;
+  grid-template-columns: 360px 1fr;
+  gap: 16px;
+  padding: 16px;
+  align-items: start;
 }
 
 /* ===== SIDEBAR ===== */
-
-.sidebar {
-  width: 280px;
-  background: white;
-  border: 1px solid #ddd;
-  padding: 15px;
-  border-radius: 8px;
-  height: 100%;
-  overflow: auto;
+.sidebar{
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: var(--shadow);
 }
 
-.sidebar-title {
-  text-align: center;
-  margin: 6px 0 14px 0;
+.sidebar h2{
+  margin: 0 0 12px;
+  font-size: 28px;
 }
 
-.filter-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.sidebar__tools{
+  display:flex;
+  gap:10px;
   margin-bottom: 12px;
+  flex-wrap:wrap;
 }
 
-.filter-container {
-  display: flex;
-  flex-direction: column;
+.restaurants{
+  display:flex;
+  flex-direction:column;
   gap: 8px;
+  margin-top: 8px;
 }
 
-.filter-btn {
+.restaurant-pill{
   width: 100%;
-  text-align: left;
-
+  text-align:left;
   padding: 10px 12px;
   border-radius: 999px;
-
-  background: #fff;
-  border: 1px solid #e5e5e5;
-
-  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--pill);
+  cursor:pointer;
+  font-size: 14px;
+}
+.restaurant-pill:hover{ background:#efefef; }
+.restaurant-pill.is-active{
+  background: var(--pillActive);
+  border-color:#7edb8b;
 }
 
-.filter-btn:hover {
-  background: #f6f6f6;
+.hint{
+  margin-top: 14px;
+  border-top: 1px dashed var(--border);
+  padding-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.hint__title{ font-weight:700; margin-bottom: 4px; color:#333; }
+
+/* ===== CONTENT ===== */
+.content{
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: var(--shadow);
+  min-height: 420px;
 }
 
-/* ===== PRAVÁ ČÁST (SKROLUJE) ===== */
-
-.content-scroll {
-  flex: 1;
-  height: 100%;
-  overflow-y: auto;
-  padding-right: 6px;
+.content__header{
+  display:flex;
+  align-items:flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
 }
 
-.restaurant {
-  border: 1px solid #ccc;
-  padding: 15px;
-  margin-bottom: 20px;
-  background: white;
-  border-radius: 8px;
+.mode{
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.sub{
+  color: var(--muted);
+  font-size: 13px;
 }
 
-.meal {
-  margin-left: 20px;
-}
-
-.small-muted {
-  color: #666;
-  font-size: 12px;
-}
-
-/* ===== PDF/IMAGE EMBED ===== */
-
-.embed-wrap {
+.menus{
+  display:flex;
+  flex-direction:column;
+  gap: 12px;
   margin-top: 10px;
 }
 
-.pdf-frame {
-  width: 100%;
-  height: 800px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
+.menu-card{
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
   background: #fff;
-  margin-top: 8px;
 }
 
-.menu-image {
-  width: 100%;
-  height: auto;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  background: #fff;
-  margin-top: 8px;
+.menu-card__title{
+  font-size: 20px;
+  font-weight: 800;
+  margin: 0 0 8px;
+}
+
+.menu-card__meta{
+  font-size: 13px;
+  color: var(--muted);
+  display:flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.menu-card__body{
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  white-space: pre-wrap;
+  line-height: 1.35;
+}
+
+.menu-card__empty{
+  color: var(--muted);
+  font-style: italic;
+}
+
+.badge{
+  display:inline-block;
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background:#f7f7f7;
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 920px){
+  .layout{
+    grid-template-columns: 1fr;
+  }
+  .topbar h1{
+    font-size: 32px;
+  }
 }
