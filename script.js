@@ -2,8 +2,8 @@ let restaurantsList = [];
 let menusCache = [];
 let currentType = "today";
 
-const COOKIE_FILTERS = "menu03_filters";
-const LS_CALORIES = "menu03:caloriesEnabled";
+const COOKIE_FILTERS = "menu03_filters";     // JSON objekt {nameLower: true/false}
+const COOKIE_CALORIES = "menu03_calories";   // "1" / "0"
 
 /* ===== COOKIES HELPERS ===== */
 
@@ -29,14 +29,14 @@ function getCookie(name) {
   return null;
 }
 
-/* ===== KALORIE TOGGLE (zatím jen UI, API přidáme později) ===== */
+/* ===== KALORIE TOGGLE (COOKIE) ===== */
 
 function caloriesEnabled() {
-  return localStorage.getItem(LS_CALORIES) === "1";
+  return getCookie(COOKIE_CALORIES) === "1";
 }
 
 function setCaloriesEnabled(v) {
-  localStorage.setItem(LS_CALORIES, v ? "1" : "0");
+  setCookie(COOKIE_CALORIES, v ? "1" : "0", 365);
   updateCaloriesButton();
 }
 
@@ -49,8 +49,8 @@ function updateCaloriesButton() {
   const btn = document.getElementById("btnCalories");
   if (!btn) return;
 
-  if (caloriesEnabled()) btn.classList.add("active");
-  else btn.classList.remove("active");
+  if (caloriesEnabled()) btn.classList.add("active-green");
+  else btn.classList.remove("active-green");
 }
 
 /* ===== FILTRY (COOKIE) ===== */
@@ -67,7 +67,6 @@ function loadFilters() {
 }
 
 function saveFilters(filters) {
-  // Cookie musí být string; JSON je ok (pozor na velikost – pro pár desítek restaurací v pohodě)
   setCookie(COOKIE_FILTERS, JSON.stringify(filters), 365);
 }
 
@@ -84,6 +83,8 @@ function isEnabledByFilter(name) {
   return filters[key] !== false;
 }
 
+/* ===== UI: render filtrů (tlačítka, žádné checkboxy) ===== */
+
 function renderFilters() {
   const container = document.getElementById("filterContainer");
   if (!container) return;
@@ -93,30 +94,31 @@ function renderFilters() {
     return;
   }
 
-  const html = restaurantsList.map(r => {
-    const checked = isEnabledByFilter(r.name) ? "checked" : "";
-    const id = `flt_${(r.id || r.name).replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const html = restaurantsList.map((r) => {
+    const enabled = isEnabledByFilter(r.name);
+    const cls = enabled ? "filter-btn active-green" : "filter-btn";
     return `
-      <label class="filter-item" for="${id}">
-        <input type="checkbox" id="${id}" data-name="${escapeHtmlAttr(r.name)}" ${checked}>
-        <span>${escapeHtml(r.name)}</span>
-      </label>
+      <button type="button" class="${cls}" data-name="${escapeHtmlAttr(r.name)}">
+        ${escapeHtml(r.name)}
+      </button>
     `;
   }).join("");
 
   container.innerHTML = html;
 
-  container.querySelectorAll("input[type=checkbox]").forEach(cb => {
-    cb.addEventListener("change", (e) => {
-      const name = e.target.getAttribute("data-name");
-      setFilter(name, e.target.checked);
+  container.querySelectorAll(".filter-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const name = e.currentTarget.getAttribute("data-name");
+      const nowEnabled = isEnabledByFilter(name);
+      setFilter(name, !nowEnabled);
+      renderFilters();
       renderMenus();
     });
   });
 }
 
 function selectAll(enabled) {
-  restaurantsList.forEach(r => setFilter(r.name, enabled));
+  restaurantsList.forEach((r) => setFilter(r.name, enabled));
   renderFilters();
   renderMenus();
 }
@@ -155,26 +157,26 @@ function renderMenus() {
   const container = document.getElementById("menuContainer");
   container.innerHTML = "";
 
-  const filteredRestaurants = (menusCache || []).filter(r => isEnabledByFilter(r.name));
+  const filteredRestaurants = (menusCache || []).filter((r) => isEnabledByFilter(r.name));
 
   if (!filteredRestaurants.length) {
     container.innerHTML = `<div class="restaurant"><div class="small-muted">Podle filtru není vybraná žádná restaurace.</div></div>`;
     return;
   }
 
-  filteredRestaurants.forEach(r => {
+  filteredRestaurants.forEach((r) => {
     const div = document.createElement("div");
     div.className = "restaurant";
     div.innerHTML = `<h3>${escapeHtml(r.name)}</h3>`;
 
-    (r.meals || []).forEach(m => {
+    (r.meals || []).forEach((m) => {
       const mealDiv = document.createElement("div");
       mealDiv.className = "meal";
 
       const price = m.price ? `${m.price} Kč` : "—";
       const day = m.day ? `(${m.day})` : "";
 
-      // když kalorie nejsou zapnuté, neukazujeme nic (žádné ---)
+      // když kalorie nejsou zapnuté, nezobrazujeme nic
       let calorieLine = "";
       if (caloriesEnabled()) {
         const kcal = (m.calories ?? "?");
@@ -214,6 +216,7 @@ function escapeHtml(str) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
 function escapeHtmlAttr(str) {
   return escapeHtml(str);
 }
@@ -221,6 +224,9 @@ function escapeHtmlAttr(str) {
 /* ===== INIT ===== */
 
 (async function init() {
+  // výchozí stav cookie pro kalorie (když ještě není)
+  if (getCookie(COOKIE_CALORIES) === null) setCookie(COOKIE_CALORIES, "0", 365);
+
   updateCaloriesButton();
   await loadRestaurantsList();
   await loadToday();

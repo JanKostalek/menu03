@@ -1,5 +1,4 @@
 :root {
-  /* když bude header vyšší/nižší, stačí upravit tady */
   --header-h: 120px;
 }
 
@@ -12,7 +11,6 @@ body {
   margin: 0;
   background: #fafafa;
 
-  /* důležité: stránka sama neskroluje */
   height: 100vh;
   overflow: hidden;
 }
@@ -52,13 +50,13 @@ button:hover {
   opacity: 0.9;
 }
 
-/* aktivní kalorické tlačítko */
-#btnCalories.active {
-  background: #d9fbe1;
-  border-color: #86d39a;
+/* aktivní zelený stav (Kalorie + aktivní filtry) */
+.active-green {
+  background: #d9fbe1 !important;
+  border-color: #86d39a !important;
 }
 
-/* ===== TĚLO APP (pod headerem) ===== */
+/* ===== TĚLO APP ===== */
 
 .app-body {
   position: fixed;
@@ -74,7 +72,7 @@ button:hover {
   padding: 20px;
 }
 
-/* ===== LEVÝ PANEL (NESKROLUJE) ===== */
+/* ===== SIDEBAR ===== */
 
 .sidebar {
   width: 280px;
@@ -83,7 +81,7 @@ button:hover {
   padding: 15px;
   border-radius: 8px;
   height: 100%;
-  overflow: auto; /* kdyby bylo restaurací hodně, scrolluje sidebar sám */
+  overflow: auto;
 }
 
 .filter-actions {
@@ -93,30 +91,37 @@ button:hover {
   margin-bottom: 15px;
 }
 
+/* Filtr tlačítka – stejné jako "Kalorická informace" (bílá / zelená) */
 .filter-container {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.filter-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid #e5e5e5;
-  padding: 6px 10px;
+.filter-btn {
+  width: 100%;
+  text-align: left;
+
+  padding: 10px 12px;
   border-radius: 999px;
-  user-select: none;
+
   background: #fff;
+  border: 1px solid #e5e5e5;
+
+  cursor: pointer;
 }
 
-/* ===== PRAVÁ ČÁST (SKROLUJE JEN MENU) ===== */
+.filter-btn:hover {
+  background: #f6f6f6;
+}
+
+/* ===== PRAVÁ ČÁST (SKROLUJE) ===== */
 
 .content-scroll {
   flex: 1;
   height: 100%;
   overflow-y: auto;
-  padding-right: 6px; /* trochu místa pro scrollbar */
+  padding-right: 6px;
 }
 
 .restaurant {
