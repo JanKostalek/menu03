@@ -7,18 +7,19 @@
 </head>
 <body>
 
-<h1>Restaurace - Denní menu</h1>
+<header class="app-header">
+  <h1 class="app-title">Restaurace - Denní menu</h1>
 
-<div class="buttons top-buttons">
-  <button onclick="loadToday()">Dnešní menu</button>
-  <button onclick="loadAll()">Celé menu</button>
-  <button onclick="openAdmin()">Přidat restauraci</button>
-  <button onclick="openSuggestion()">Návrh restaurace</button>
-  <button id="btnCalories" onclick="toggleCalories()">Kalorická informace</button>
-</div>
+  <div class="buttons top-buttons">
+    <button onclick="loadToday()">Dnešní menu</button>
+    <button onclick="loadAll()">Celé menu</button>
+    <button onclick="openAdmin()">Přidat restauraci</button>
+    <button onclick="openSuggestion()">Návrh restaurace</button>
+    <button id="btnCalories" onclick="toggleCalories()">Kalorická informace</button>
+  </div>
+</header>
 
-<div class="layout">
-
+<div class="app-body">
   <aside class="sidebar">
     <h3>Filtr restaurací</h3>
 
@@ -32,17 +33,12 @@
     </div>
   </aside>
 
-  <main class="content">
+  <!-- Skroluje se jen tato pravá část -->
+  <main class="content-scroll">
     <div id="menuContainer"></div>
   </main>
-
 </div>
 
 <script src="script.js"></script>
-<script>
-function openSuggestion() {
-  window.open("/suggest.html", "_blank");
-}
-</script>
 </body>
 </html>

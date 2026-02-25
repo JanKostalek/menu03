@@ -2,11 +2,34 @@ let restaurantsList = [];
 let menusCache = [];
 let currentType = "today";
 
-const LS_KEY = "menu03:filters";
+const COOKIE_FILTERS = "menu03_filters";
 const LS_CALORIES = "menu03:caloriesEnabled";
-const LS_KCAL_CACHE = "menu03:kcalCache_v1"; // { "normalized meal": number|null }
 
-/* ===== KALORIE TOGGLE ===== */
+/* ===== COOKIES HELPERS ===== */
+
+function setCookie(name, value, days = 365) {
+  const expires = new Date(Date.now() + days * 864e5).toUTCString();
+  document.cookie =
+    encodeURIComponent(name) +
+    "=" +
+    encodeURIComponent(value) +
+    "; expires=" +
+    expires +
+    "; path=/; SameSite=Lax";
+}
+
+function getCookie(name) {
+  const target = encodeURIComponent(name) + "=";
+  const parts = document.cookie.split("; ");
+  for (const p of parts) {
+    if (p.startsWith(target)) {
+      return decodeURIComponent(p.substring(target.length));
+    }
+  }
+  return null;
+}
+
+/* ===== KALORIE TOGGLE (zatím jen UI, API přidáme později) ===== */
 
 function caloriesEnabled() {
   return localStorage.getItem(LS_CALORIES) === "1";
@@ -20,9 +43,6 @@ function setCaloriesEnabled(v) {
 function toggleCalories() {
   setCaloriesEnabled(!caloriesEnabled());
   renderMenus();
-  if (caloriesEnabled()) {
-    enrichCaloriesForVisibleMeals(); // start skutečné načítání
-  }
 }
 
 function updateCaloriesButton() {
@@ -33,147 +53,22 @@ function updateCaloriesButton() {
   else btn.classList.remove("active");
 }
 
-/* ===== KALORIE CACHE + FETCH ===== */
+/* ===== FILTRY (COOKIE) ===== */
 
-function loadKcalCache() {
+function loadFilters() {
   try {
-    const raw = localStorage.getItem(LS_KCAL_CACHE);
-    const obj = raw ? JSON.parse(raw) : {};
+    const raw = getCookie(COOKIE_FILTERS);
+    if (!raw) return {};
+    const obj = JSON.parse(raw);
     return obj && typeof obj === "object" ? obj : {};
   } catch {
     return {};
   }
 }
 
-function saveKcalCache(cache) {
-  try {
-    localStorage.setItem(LS_KCAL_CACHE, JSON.stringify(cache));
-  } catch {
-    // ignore
-  }
-}
-
-function normMealName(name) {
-  return String(name || "")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 120);
-}
-
-function shouldTryCaloriesForMealName(name) {
-  const n = normMealName(name);
-  if (!n || n.length < 5) return false;
-
-  // odfiltruj zjevné nadpisy/sekce
-  const bad = [
-    "menu", "nabídka", "nabidka", "polévky", "polevky", "saláty", "salaty",
-    "dezerty", "nápoje", "napoje", "stálá", "stala", "denní", "denni",
-    "lunch menu", "starters", "soups", "gallery", "galerie"
-  ];
-  if (bad.some(b => n === b || n.includes(b + " ") || n.endsWith(" " + b))) return false;
-
-  // telefon / čistě čísla
-  if (/^\+?\d[\d\s-]{6,}$/.test(n)) return false;
-
-  return true;
-}
-
-// jednoduchý limiter na paralelní požadavky
-async function runWithConcurrency(tasks, concurrency = 3) {
-  let i = 0;
-  const workers = new Array(concurrency).fill(0).map(async () => {
-    while (i < tasks.length) {
-      const idx = i++;
-      try { await tasks[idx](); } catch { /* ignore */ }
-    }
-  });
-  await Promise.all(workers);
-}
-
-async function fetchKcalFromApi(mealName) {
-  const q = normMealName(mealName);
-  const resp = await fetch("/api/usda?query=" + encodeURIComponent(q));
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) return null;
-  // data.kcal může být number nebo null
-  return (typeof data.kcal === "number") ? data.kcal : null;
-}
-
-async function enrichCaloriesForVisibleMeals() {
-  if (!caloriesEnabled()) return;
-
-  const kcalCache = loadKcalCache();
-
-  // vezmeme jen viditelné restaurace podle filtru
-  const visibleRestaurants = (menusCache || []).filter(r => isEnabledByFilter(r.name));
-
-  // sebereme kandidáty (unikátní názvy)
-  const needed = new Set();
-
-  for (const r of visibleRestaurants) {
-    for (const m of (r.meals || [])) {
-      if (!m || !m.name) continue;
-      if (!shouldTryCaloriesForMealName(m.name)) continue;
-
-      const key = normMealName(m.name);
-      if (!(key in kcalCache)) needed.add(key);
-    }
-  }
-
-  if (needed.size === 0) {
-    // už vše máme (nebo je to nevhodné)
-    applyKcalCacheToMenus(kcalCache);
-    renderMenus();
-    return;
-  }
-
-  const tasks = Array.from(needed).map((key) => async () => {
-    // ještě jednou check (kdyby se to změnilo během běhu)
-    const cacheNow = loadKcalCache();
-    if (key in cacheNow) return;
-
-    const kcal = await fetchKcalFromApi(key);
-
-    // uložit do localStorage cache
-    const cache = loadKcalCache();
-    cache[key] = kcal; // může být null
-    saveKcalCache(cache);
-
-    // průběžně aplikovat do UI
-    applyKcalCacheToMenus(cache);
-    renderMenus();
-  });
-
-  // max 3 paralelně
-  await runWithConcurrency(tasks, 3);
-}
-
-function applyKcalCacheToMenus(kcalCache) {
-  for (const r of (menusCache || [])) {
-    for (const m of (r.meals || [])) {
-      if (!m || !m.name) continue;
-      const key = normMealName(m.name);
-      if (key in kcalCache) {
-        m.calories = kcalCache[key]; // number nebo null
-      }
-    }
-  }
-}
-
-/* ===== FILTRY ===== */
-
-function loadFilters() {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-
 function saveFilters(filters) {
-  localStorage.setItem(LS_KEY, JSON.stringify(filters));
+  // Cookie musí být string; JSON je ok (pozor na velikost – pro pár desítek restaurací v pohodě)
+  setCookie(COOKIE_FILTERS, JSON.stringify(filters), 365);
 }
 
 function setFilter(name, enabled) {
@@ -185,6 +80,7 @@ function setFilter(name, enabled) {
 function isEnabledByFilter(name) {
   const filters = loadFilters();
   const key = String(name).toLowerCase();
+  // default: pokud není nastaveno, tak ZOBRAZIT
   return filters[key] !== false;
 }
 
@@ -215,9 +111,6 @@ function renderFilters() {
       const name = e.target.getAttribute("data-name");
       setFilter(name, e.target.checked);
       renderMenus();
-
-      // pokud jsou kalorie zapnuté, dopočítej pro nové viditelné položky
-      if (caloriesEnabled()) enrichCaloriesForVisibleMeals();
     });
   });
 }
@@ -226,10 +119,9 @@ function selectAll(enabled) {
   restaurantsList.forEach(r => setFilter(r.name, enabled));
   renderFilters();
   renderMenus();
-  if (caloriesEnabled()) enrichCaloriesForVisibleMeals();
 }
 
-/* ===== NAČÍTÁNÍ MENU ===== */
+/* ===== NAČÍTÁNÍ RESTAURACÍ + MENU ===== */
 
 async function loadRestaurantsList() {
   try {
@@ -256,21 +148,14 @@ async function loadMenus(type) {
   const res = await fetch("/api/getMenus?type=" + encodeURIComponent(type));
   const data = await res.json();
   menusCache = Array.isArray(data) ? data : [];
-
-  // aplikuj případnou lokální cache kcal do načtených dat
-  applyKcalCacheToMenus(loadKcalCache());
-
   renderMenus();
-
-  // pokud je zapnuto, startni načítání z API
-  if (caloriesEnabled()) enrichCaloriesForVisibleMeals();
 }
 
 function renderMenus() {
   const container = document.getElementById("menuContainer");
   container.innerHTML = "";
 
-  const filteredRestaurants = menusCache.filter(r => isEnabledByFilter(r.name));
+  const filteredRestaurants = (menusCache || []).filter(r => isEnabledByFilter(r.name));
 
   if (!filteredRestaurants.length) {
     container.innerHTML = `<div class="restaurant"><div class="small-muted">Podle filtru není vybraná žádná restaurace.</div></div>`;
@@ -289,16 +174,11 @@ function renderMenus() {
       const price = m.price ? `${m.price} Kč` : "—";
       const day = m.day ? `(${m.day})` : "";
 
+      // když kalorie nejsou zapnuté, neukazujeme nic (žádné ---)
       let calorieLine = "";
       if (caloriesEnabled()) {
-        // pokud je null => nenalezeno, pokud undefined => ještě se nenačetlo
-        if (typeof m.calories === "number") {
-          calorieLine = ` | 🔥 ${escapeHtml(String(m.calories))} kcal`;
-        } else if (m.calories === null) {
-          calorieLine = ` | 🔥 ? kcal`;
-        } else {
-          calorieLine = ` | 🔥 …`;
-        }
+        const kcal = (m.calories ?? "?");
+        calorieLine = ` | 🔥 ${escapeHtml(String(kcal))} kcal`;
       }
 
       mealDiv.innerHTML = `
@@ -314,8 +194,14 @@ function renderMenus() {
   });
 }
 
+/* ===== NAVIGACE ===== */
+
 function openAdmin() {
   window.location.href = "/admin.html";
+}
+
+function openSuggestion() {
+  window.open("/suggest.html", "_blank");
 }
 
 /* ===== ESCAPE ===== */
