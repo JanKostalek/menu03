@@ -14,10 +14,12 @@ const LS_MENU_CACHE_DATE_ALL = "menu03_menu_cache_date_all";
 
 /**
  * Domény, které typicky blokují vložení do iframe (X-Frame-Options / CSP).
- * Pro tyto domény NEBUDEME iframe vůbec zobrazovat, jen tlačítko "Otevřít PDF" + hláška.
+ * Sem si můžeš postupně přidávat další problematické domény.
  */
 const EMBED_BLOCKED_DOMAINS = [
   "holidayinn.cz",
+  // přidej další dle potřeby:
+  // "restauracesalanda.cz",
 ];
 
 /* ===== COOKIES HELPERS ===== */
@@ -80,26 +82,22 @@ function isEmbedBlocked(url) {
   });
 }
 
-/* ===== POPUP OPEN (FUNKČNÍ VERZE) ===== */
+/* ===== POPUP OPEN ===== */
 
-function openPdfPopup(url) {
+function openPopup(url) {
   const w = Math.min(1200, window.screen.width - 60);
   const h = Math.min(900, window.screen.height - 80);
-
   const left = Math.max(0, Math.floor((window.screen.width - w) / 2));
   const top = Math.max(0, Math.floor((window.screen.height - h) / 2));
 
-  // Pozn.: prohlížeče mohou některé volby ignorovat (hlavně "location=no"),
-  // ale pořád to otevře samostatné minimalistické okno.
   const features =
     `popup=yes,` +
     `width=${w},height=${h},left=${left},top=${top},` +
     `toolbar=no,menubar=no,location=no,status=no,` +
     `scrollbars=yes,resizable=yes`;
 
-  const win = window.open(url, "menu_pdf_popup", features);
+  const win = window.open(url, "menu_popup", features);
   if (!win) {
-    // pokud popup blokuje, aspoň otevřít v nové záložce
     window.open(url, "_blank", "noopener,noreferrer");
     return;
   }
@@ -115,58 +113,94 @@ function iconExternal() {
 
 /* ===== SOURCE BLOCK ===== */
 
-function buildSourceBlock(url) {
+function buildPdfBlock(url) {
   const wrap = document.createElement("div");
   wrap.className = "source-block";
 
-  if (isPdfUrl(url)) {
-    const blocked = isEmbedBlocked(url);
+  const blocked = isEmbedBlocked(url);
 
-    wrap.innerHTML = `
-      <div class="source-actions">
-        <button type="button" class="btn-action btn-pdf js-open-pdf" data-url="${escapeHtmlAttr(url)}">
-          ${iconExternal()} <span>Otevřít PDF</span>
-        </button>
-      </div>
+  wrap.innerHTML = `
+    <div class="source-actions">
+      <button type="button" class="btn-action js-open-popup" data-url="${escapeHtmlAttr(url)}">
+        ${iconExternal()} <span>Otevřít PDF</span>
+      </button>
+    </div>
 
-      ${
-        blocked
-          ? `<div class="source-note source-note--warn">
-               Otevření menu je blokováno zdrojovou stránkou. Použijte prosím tlačítko výše k jeho otevření.
-             </div>`
-          : `<div class="source-note">
-               Pokud se náhled nezobrazí, použijte tlačítko <b>Otevřít PDF</b> výše.
-             </div>
-             <div class="pdf-wrap">
-               <iframe class="pdf-frame" src="${escapeHtmlAttr(url)}"></iframe>
-             </div>`
-      }
-    `;
-    return wrap;
-  }
+    ${
+      blocked
+        ? `<div class="source-note source-note--warn">
+             Otevření menu je blokováno zdrojovou stránkou. Použijte prosím tlačítko výše k jeho otevření.
+           </div>`
+        : `<div class="source-note">
+             Pokud se náhled nezobrazí, použijte tlačítko <b>Otevřít PDF</b> výše.
+           </div>
+           <div class="pdf-wrap">
+             <iframe class="pdf-frame" src="${escapeHtmlAttr(url)}"></iframe>
+           </div>`
+    }
+  `;
+  return wrap;
+}
 
-  if (isImageUrl(url)) {
-    wrap.innerHTML = `
-      <div class="source-actions">
-        <a class="btn-action btn-img" href="${escapeHtmlAttr(url)}" target="_blank" rel="noopener noreferrer">
-          ${iconExternal()} <span>Otevřít obrázek</span>
-        </a>
-      </div>
-
-      <div class="img-wrap">
-        <img class="menu-image" src="${escapeHtmlAttr(url)}" alt="Menu" />
-      </div>
-    `;
-    return wrap;
-  }
+function buildImageBlock(url) {
+  const wrap = document.createElement("div");
+  wrap.className = "source-block";
 
   wrap.innerHTML = `
     <div class="source-actions">
       <a class="btn-action" href="${escapeHtmlAttr(url)}" target="_blank" rel="noopener noreferrer">
-        ${iconExternal()} <span>Otevřít zdroj</span>
+        ${iconExternal()} <span>Otevřít obrázek</span>
       </a>
     </div>
+
+    <div class="img-wrap">
+      <img class="menu-image" src="${escapeHtmlAttr(url)}" alt="Menu" />
+    </div>
   `;
+  return wrap;
+}
+
+/**
+ * HTML/WEB zdroj – hybrid:
+ * - pokud mode=embed → pokus o iframe, jinak varování + tlačítko
+ * - pokud mode=parse → jen tlačítko (aby UI nebylo přeplněné), iframe jen když chceš (lze snadno změnit)
+ */
+function buildWebBlock(url, mode) {
+  const wrap = document.createElement("div");
+  wrap.className = "source-block";
+
+  const blocked = isEmbedBlocked(url);
+
+  // vždy nabízíme tlačítko
+  let inner = `
+    <div class="source-actions">
+      <button type="button" class="btn-action js-open-popup" data-url="${escapeHtmlAttr(url)}">
+        ${iconExternal()} <span>Otevřít zdroj</span>
+      </button>
+    </div>
+  `;
+
+  // embed režim → snažíme se vložit stránku do iframe (stejně jako PDF)
+  if (String(mode || "").toLowerCase() === "embed") {
+    if (blocked) {
+      inner += `
+        <div class="source-note source-note--warn">
+          Otevření menu je blokováno zdrojovou stránkou. Použijte prosím tlačítko výše k jeho otevření.
+        </div>
+      `;
+    } else {
+      inner += `
+        <div class="source-note">
+          Pokud se náhled nezobrazí, použijte tlačítko <b>Otevřít zdroj</b> výše.
+        </div>
+        <div class="web-wrap">
+          <iframe class="web-frame" src="${escapeHtmlAttr(url)}"></iframe>
+        </div>
+      `;
+    }
+  }
+
+  wrap.innerHTML = inner;
   return wrap;
 }
 
@@ -400,36 +434,45 @@ function renderMenus() {
     div.className = "restaurant";
     div.innerHTML = `<h3>${escapeHtml(r.name)}</h3>`;
 
-    if (r.url) {
-      const url = String(r.url);
-      div.appendChild(buildSourceBlock(url));
+    const url = r.url ? String(r.url) : "";
+    const mode = String(r.mode || "parse").toLowerCase();
+
+    if (url) {
+      if (isPdfUrl(url)) div.appendChild(buildPdfBlock(url));
+      else if (isImageUrl(url)) div.appendChild(buildImageBlock(url));
+      else div.appendChild(buildWebBlock(url, mode));
     }
 
-    (r.meals || []).forEach((m) => {
-      const mealDiv = document.createElement("div");
-      mealDiv.className = "meal";
+    // Parsovaná jídla se zobrazí jen když existují
+    const meals = Array.isArray(r.meals) ? r.meals : [];
+    if (meals.length) {
+      meals.forEach((m) => {
+        const mealDiv = document.createElement("div");
+        mealDiv.className = "meal";
 
-      const price = m.price ? `${m.price} Kč` : "—";
-      const day = m.day ? `(${m.day})` : "";
+        const price = m.price ? `${m.price} Kč` : "—";
+        const day = m.day ? `(${m.day})` : "";
 
-      mealDiv.innerHTML = `
-        <div><b>${escapeHtml(m.name)}</b> ${escapeHtml(day)}</div>
-        <div>💰 ${escapeHtml(price)}</div>
-        <hr>
-      `;
+        mealDiv.innerHTML = `
+          <div><b>${escapeHtml(m.name)}</b> ${escapeHtml(day)}</div>
+          <div>💰 ${escapeHtml(price)}</div>
+          <hr>
+        `;
 
-      div.appendChild(mealDiv);
-    });
+        div.appendChild(mealDiv);
+      });
+    }
 
+    // když je mode=parse a nic se nenašlo, necháme UI čisté (jen zdrojový embed/tlačítko)
     container.appendChild(div);
   });
 
-  // PDF popup tlačítka (funkční verze)
-  container.querySelectorAll(".js-open-pdf").forEach((btn) => {
+  // popup tlačítka (PDF i web)
+  container.querySelectorAll(".js-open-popup").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       const url = e.currentTarget.getAttribute("data-url");
       if (!url) return;
-      openPdfPopup(url);
+      openPopup(url);
     });
   });
 }

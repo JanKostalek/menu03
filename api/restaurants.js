@@ -21,13 +21,25 @@ function makeId() {
   );
 }
 
+function normalizeMode(mode, url) {
+  const m = String(mode || "").trim().toLowerCase();
+  if (m === "embed" || m === "parse") return m;
+
+  // default:
+  // - HTML: parse
+  // - PDF/obrázek: parse/embed je v podstatě jedno, frontend to stejně řeší jako zdroj
+  return "parse";
+}
+
 function normalizeRestaurant(r) {
-  // podpora starších záznamů bez id
   if (!r) return null;
   const name = String(r.name || "").trim();
   const url = String(r.url || "").trim();
   if (!name || !url) return null;
-  return { id: r.id || makeId(), name, url };
+
+  const mode = normalizeMode(r.mode, url);
+
+  return { id: r.id || makeId(), name, url, mode };
 }
 
 async function readList() {
@@ -40,14 +52,13 @@ async function readList() {
       return normalized.length ? normalized : fallback;
     }
   } catch {
-    // KV nemusí být dostupné v lokálu – pak jedeme fallback
+    // KV nemusí být dostupné v lokálu – fallback
   }
 
   return fallback;
 }
 
 async function writeList(list) {
-  // ukládáme jen do KV (trvalé na Vercelu)
   await kv.set(KEY, list);
 }
 
@@ -58,16 +69,18 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "POST") {
-    const { name, url } = req.body || {};
+    const { name, url, mode } = req.body || {};
     if (!name || !url) return res.status(400).json({ error: "Chybí name nebo url" });
 
     const list = await readList();
+
     const next = [
       ...list,
       {
         id: makeId(),
         name: String(name).trim(),
         url: String(url).trim(),
+        mode: normalizeMode(mode, url),
       },
     ];
 

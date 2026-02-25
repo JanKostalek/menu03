@@ -6,7 +6,7 @@
   <link rel="stylesheet" href="style.css" />
   <style>
     .row { display:flex; gap:10px; flex-wrap:wrap; }
-    .row input { flex: 1 1 320px; padding:10px; margin:6px 0; }
+    .row input, .row select { flex: 1 1 320px; padding:10px; margin:6px 0; }
     .list-item { display:flex; gap:10px; align-items:center; justify-content:space-between; }
     .list-left { min-width: 0; }
     .muted { color:#666; font-size: 12px; word-break: break-all; }
@@ -15,6 +15,7 @@
     .ok { color: #0b7a0b; }
     .section { border:1px solid #ccc; padding:15px; margin-top:20px; background:#fff; border-radius:8px; }
     .kv { word-break: break-word; }
+    .pill { display:inline-block; padding:3px 8px; border:1px solid #ccc; border-radius:999px; font-size:12px; background:#f3f3f3; }
   </style>
 </head>
 <body>
@@ -30,10 +31,17 @@
   <div class="row">
     <input type="text" id="name" placeholder="Název restaurace" />
     <input type="text" id="url" placeholder="URL menu (HTML/PDF/obrázek)" />
+    <select id="mode">
+      <option value="parse" selected>Parsovat HTML (zkusit vyčíst jídla a ceny)</option>
+      <option value="embed">Zobrazit zdroj (iframe/popup) – bez parsování</option>
+    </select>
   </div>
   <div class="row">
     <button onclick="addRestaurant()">Uložit</button>
     <span id="status" class="muted"></span>
+  </div>
+  <div class="muted">
+    Tip: Pro weby se složitou strukturou (cookie/18+/dynamika) použij „Zobrazit zdroj“.
   </div>
 </div>
 
@@ -82,6 +90,12 @@ async function fetchSuggestions() {
   return await resp.json();
 }
 
+function modeLabel(m) {
+  const v = String(m || "").toLowerCase();
+  if (v === "embed") return "embed";
+  return "parse";
+}
+
 function renderRestaurants(restaurants) {
   if (!restaurants || restaurants.length === 0) {
     listEl.innerHTML = "<div class='muted'>Zatím žádné restaurace.</div>";
@@ -91,7 +105,10 @@ function renderRestaurants(restaurants) {
   const html = restaurants.map(r => `
     <div class="list-item">
       <div class="list-left">
-        <div><b>${escapeHtml(r.name)}</b></div>
+        <div>
+          <b>${escapeHtml(r.name)}</b>
+          <span class="pill">${escapeHtml(modeLabel(r.mode))}</span>
+        </div>
         <div class="muted kv">${escapeHtml(r.url)}</div>
       </div>
       <div>
@@ -137,8 +154,7 @@ async function loadRestaurants() {
     const restaurants = await fetchRestaurants();
     renderRestaurants(restaurants);
   } catch (e) {
-    listEl.innerHTML = "<div class='muted'>Nepodařilo se načíst seznam.</div>";
-    setStatus("Chyba: " + (e.message || e), false);
+    listEl.textContent = "Chyba: " + (e.message || e);
   }
 }
 
@@ -148,13 +164,14 @@ async function loadSuggestions() {
     const items = await fetchSuggestions();
     renderSuggestions(items);
   } catch (e) {
-    suggestionsEl.innerHTML = "<div class='muted'>Nepodařilo se načíst návrhy.</div>";
+    suggestionsEl.textContent = "Chyba: " + (e.message || e);
   }
 }
 
 async function addRestaurant() {
   const name = document.getElementById("name").value.trim();
   const url = document.getElementById("url").value.trim();
+  const mode = document.getElementById("mode").value;
 
   if (!name || !url) {
     alert("Vyplň název i URL.");
@@ -165,7 +182,7 @@ async function addRestaurant() {
   const resp = await fetch("/api/restaurants", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, url })
+    body: JSON.stringify({ name, url, mode })
   });
 
   const data = await resp.json().catch(() => ({}));
@@ -176,56 +193,50 @@ async function addRestaurant() {
 
   document.getElementById("name").value = "";
   document.getElementById("url").value = "";
+  document.getElementById("mode").value = "parse";
 
   setStatus("Uloženo ✅", true);
   await loadRestaurants();
 }
 
 async function deleteRestaurant(id, name) {
-  const ok = confirm(`Opravdu smazat "${name}"?`);
-  if (!ok) return;
-
+  if (!confirm("Opravdu smazat: " + name + "?")) return;
   setStatus("Mažu…");
   const resp = await fetch("/api/restaurants?id=" + encodeURIComponent(id), { method: "DELETE" });
   const data = await resp.json().catch(() => ({}));
-
   if (!resp.ok) {
     setStatus("Nepodařilo se smazat: " + (data.error || resp.status), false);
     return;
   }
-
   setStatus("Smazáno ✅", true);
   await loadRestaurants();
 }
 
 async function deleteSuggestion(id, name) {
-  const ok = confirm(`Opravdu smazat návrh "${name}"?`);
-  if (!ok) return;
+  if (!confirm("Smazat návrh: " + name + "?")) return;
 
   const resp = await fetch("/api/suggestions?id=" + encodeURIComponent(id), { method: "DELETE" });
+  const data = await resp.json().catch(() => ({}));
   if (!resp.ok) {
-    alert("Nepodařilo se smazat.");
+    alert("Nepodařilo se smazat: " + (data.error || resp.status));
     return;
   }
 
   await loadSuggestions();
 }
 
-// mini-escapes
 function escapeHtml(str) {
-  return String(str)
+  return String(str || "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
-function escapeHtmlAttr(str) {
-  return escapeHtml(str);
-}
+function escapeHtmlAttr(str) { return escapeHtml(str); }
 
-loadSuggestions();
 loadRestaurants();
+loadSuggestions();
 </script>
 
 </body>
