@@ -58,10 +58,11 @@ function extractMealsFromHtml(html) {
 }
 
 async function loadRestaurants() {
+  // primárně z KV
   const kvList = await kv.get("restaurants:list");
   if (Array.isArray(kvList) && kvList.length) return kvList;
 
-  // fallback: restaurants.json v rootu
+  // fallback: restaurants.json v rootu (pokud existuje)
   try {
     const p = path.join(process.cwd(), "restaurants.json");
     const raw = fs.readFileSync(p, "utf-8");
@@ -93,24 +94,36 @@ async function fetchWithTimeout(url, ms = 15000) {
 
 async function buildMenus(type) {
   const restaurants = await loadRestaurants();
-  const out = [];
 
+  const out = [];
   for (const r of restaurants) {
     const name = r?.name || "Neznámá restaurace";
     const url = r?.url || "";
 
-    if (isPdf(url) || isImage(url)) {
+    // 1) PDF / obrázek: neparsujeme, jen vracíme zdroj pro zobrazení
+    if (isPdf(url)) {
       out.push({
         id: r.id || name,
         name,
         url,
-        meals: [
-          { name: "Menu je PDF/obrázek – parsování zatím není zapnuté.", price: null, day: null, calories: undefined }
-        ]
+        source: { type: "pdf", url },
+        meals: []
       });
       continue;
     }
 
+    if (isImage(url)) {
+      out.push({
+        id: r.id || name,
+        name,
+        url,
+        source: { type: "image", url },
+        meals: []
+      });
+      continue;
+    }
+
+    // 2) HTML: stáhnout + parsovat text (jako doposud)
     try {
       const resp = await fetchWithTimeout(url, 15000);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -122,6 +135,7 @@ async function buildMenus(type) {
         id: r.id || name,
         name,
         url,
+        source: { type: "html", url },
         meals: meals.length ? meals : [
           { name: "Menu se nepodařilo z textu rozpoznat.", price: null, day: null, calories: undefined }
         ]
@@ -131,6 +145,7 @@ async function buildMenus(type) {
         id: r.id || name,
         name,
         url,
+        source: { type: "html", url },
         meals: [
           { name: "Menu se nepodařilo načíst.", price: null, day: null, calories: undefined }
         ],
@@ -139,6 +154,7 @@ async function buildMenus(type) {
     }
   }
 
+  // type zatím nemění parsing; připravené do budoucna
   return out;
 }
 
@@ -147,6 +163,7 @@ export default async function handler(req, res) {
     const type = (req.query?.type === "all") ? "all" : "today";
     const date = todayISO();
 
+    // KV cache per den + typ
     const cacheKey = `menus:${type}:${date}`;
     const cached = await kv.get(cacheKey);
 
@@ -156,7 +173,7 @@ export default async function handler(req, res) {
 
     const menus = await buildMenus(type);
 
-    // 36 hodin
+    // 36h TTL
     await kv.set(cacheKey, menus, { ex: 60 * 60 * 36 });
 
     return res.status(200).json(menus);
