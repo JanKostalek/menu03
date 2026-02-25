@@ -13,6 +13,15 @@ const LS_MENU_CACHE_ALL = "menu03_menu_cache_all";
 const LS_MENU_CACHE_DATE_TODAY = "menu03_menu_cache_date_today";
 const LS_MENU_CACHE_DATE_ALL = "menu03_menu_cache_date_all";
 
+/**
+ * Domény, které typicky blokují vložení do iframe (X-Frame-Options / CSP).
+ * Pro tyto domény NEBUDEME iframe vůbec zobrazovat, jen tlačítko "Otevřít PDF" + hláška.
+ * Přidej sem další domény, pokud narazíš na podobný problém.
+ */
+const EMBED_BLOCKED_DOMAINS = [
+  "holidayinn.cz",
+];
+
 /* ===== COOKIES HELPERS ===== */
 
 function setCookie(name, value, days = 365) {
@@ -45,7 +54,7 @@ function todayISO() {
   return `${y}-${m}-${day}`;
 }
 
-/* ===== URL TYPY + SOURCE BLOK ===== */
+/* ===== URL HELPERS ===== */
 
 function isPdfUrl(url) {
   return /\.pdf(\?|#|$)/i.test(String(url || ""));
@@ -55,40 +64,55 @@ function isImageUrl(url) {
   return /\.(png|jpg|jpeg|webp|gif)(\?|#|$)/i.test(String(url || ""));
 }
 
+function getHostname(url) {
+  try {
+    return new URL(String(url), window.location.origin).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function isEmbedBlocked(url) {
+  const host = getHostname(url);
+  if (!host) return false;
+
+  return EMBED_BLOCKED_DOMAINS.some((d) => {
+    const dom = String(d).toLowerCase();
+    return host === dom || host.endsWith("." + dom);
+  });
+}
+
 function iconExternal() {
-  // jednoduchá ikona "otevřít v novém okně"
   return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7h-2V6.41l-9.29 9.3-1.42-1.42 9.3-9.29H14V3z"></path><path d="M5 5h6v2H7v10h10v-4h2v6H5V5z"></path></svg>`;
 }
 
-function iconEye() {
-  // ikona "náhled"
-  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5c5.05 0 9.27 3.11 11 7-1.73 3.89-5.95 7-11 7S2.73 15.89 1 12c1.73-3.89 5.95-7 11-7zm0 2c-3.94 0-7.32 2.2-8.94 5 1.62 2.8 5 5 8.94 5s7.32-2.2 8.94-5c-1.62-2.8-5-5-8.94-5zm0 2.5A2.5 2.5 0 1 1 12 14a2.5 2.5 0 0 1 0-5z"></path></svg>`;
-}
-
-function buildSourceBlock(url, previewId) {
+function buildSourceBlock(url) {
   const wrap = document.createElement("div");
   wrap.className = "source-block";
 
   // PDF
   if (isPdfUrl(url)) {
+    const blocked = isEmbedBlocked(url);
+
     wrap.innerHTML = `
       <div class="source-actions">
         <a class="btn-action btn-pdf" href="${escapeHtmlAttr(url)}" target="_blank" rel="noopener noreferrer">
           ${iconExternal()} <span>Otevřít PDF</span>
         </a>
-
-        <button type="button" class="btn-action btn-secondary" data-toggle-preview="${escapeHtmlAttr(previewId)}">
-          ${iconEye()} <span>Zobrazit náhled</span>
-        </button>
       </div>
 
-      <div class="source-note">
-        Náhled PDF bývá některými weby blokován. Když se nezobrazí, použij tlačítko <b>Otevřít PDF</b>.
-      </div>
-
-      <div id="${escapeHtmlAttr(previewId)}" class="pdf-wrap">
-        <iframe class="pdf-frame" src="${escapeHtmlAttr(url)}"></iframe>
-      </div>
+      ${
+        blocked
+          ? `<div class="source-note source-note--warn">
+               Otevření menu je blokováno zdrojovou stránkou. Použijte prosím tlačítko výše k jeho otevření.
+             </div>`
+          : `<div class="source-note">
+               Pokud se náhled nezobrazí, použijte tlačítko <b>Otevřít PDF</b> výše.
+             </div>
+             <div class="pdf-wrap">
+               <iframe class="pdf-frame" src="${escapeHtmlAttr(url)}"></iframe>
+             </div>`
+      }
     `;
     return wrap;
   }
@@ -100,13 +124,9 @@ function buildSourceBlock(url, previewId) {
         <a class="btn-action btn-img" href="${escapeHtmlAttr(url)}" target="_blank" rel="noopener noreferrer">
           ${iconExternal()} <span>Otevřít obrázek</span>
         </a>
-
-        <button type="button" class="btn-action btn-secondary" data-toggle-preview="${escapeHtmlAttr(previewId)}">
-          ${iconEye()} <span>Zobrazit náhled</span>
-        </button>
       </div>
 
-      <div id="${escapeHtmlAttr(previewId)}" class="img-wrap">
+      <div class="img-wrap">
         <img class="menu-image" src="${escapeHtmlAttr(url)}" alt="Menu" />
       </div>
     `;
@@ -377,15 +397,14 @@ function renderMenus() {
     return;
   }
 
-  filteredRestaurants.forEach((r, idx) => {
+  filteredRestaurants.forEach((r) => {
     const div = document.createElement("div");
     div.className = "restaurant";
     div.innerHTML = `<h3>${escapeHtml(r.name)}</h3>`;
 
-    // ===== Zdroj (URL) + PDF/obrázek náhled =====
     if (r.url) {
       const url = String(r.url);
-      div.appendChild(buildSourceBlock(url, `preview_${idx}`));
+      div.appendChild(buildSourceBlock(url));
     }
 
     (r.meals || []).forEach((m) => {
@@ -411,19 +430,6 @@ function renderMenus() {
     });
 
     container.appendChild(div);
-  });
-
-  // eventy pro "Zobrazit náhled"
-  container.querySelectorAll("[data-toggle-preview]").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      const targetId = e.currentTarget.getAttribute("data-toggle-preview");
-      const wrap = document.getElementById(targetId);
-      if (!wrap) return;
-
-      const isOpen = wrap.classList.toggle("is-open");
-      const span = e.currentTarget.querySelector("span");
-      if (span) span.textContent = isOpen ? "Skrýt náhled" : "Zobrazit náhled";
-    });
   });
 }
 
