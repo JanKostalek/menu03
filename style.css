@@ -1,146 +1,126 @@
-:root {
-  --header-h: 120px;
-}
-
-* {
-  box-sizing: border-box;
-}
 
 body {
-  font-family: Arial;
   margin: 0;
-  background: #fafafa;
-
-  height: 100vh;
-  overflow: hidden;
+  font-family: Arial, sans-serif;
+  background: #f5f5f5;
 }
 
-/* ===== FIXNÍ HORNÍ LIŠTA ===== */
+/* ===== HEADER FIXED ===== */
 
-.app-header {
-  position: fixed;
+.header-fixed {
+  position: sticky;
   top: 0;
-  left: 0;
-  right: 0;
-  height: var(--header-h);
-  background: #fafafa;
+  background: #ffffff;
+  padding: 20px;
   border-bottom: 1px solid #ddd;
   z-index: 1000;
-  padding: 18px 20px;
 }
 
-.app-title {
-  margin: 0 0 10px 0;
+.header-fixed h1 {
+  margin: 0 0 15px 0;
 }
 
-.top-buttons {
+/* ===== TOP BAR ===== */
+
+.top-bar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
 }
 
-button {
-  padding: 10px 15px;
-  cursor: pointer;
-  border: 1px solid #ccc;
+.left-buttons,
+.right-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.top-bar button {
+  padding: 8px 14px;
+  border: 1px solid #bbb;
   background: #e6e6e6;
+  cursor: pointer;
 }
 
-button:hover {
-  opacity: 0.9;
+.top-bar button:hover {
+  background: #dcdcdc;
 }
 
-/* aktivní zelený stav (Kalorie + aktivní filtry) */
-.active-green {
-  background: #d9fbe1 !important;
-  border-color: #86d39a !important;
-}
+/* ===== LAYOUT ===== */
 
-/* ===== TĚLO APP ===== */
-
-.app-body {
-  position: fixed;
-  top: var(--header-h);
-  left: 0;
-  right: 0;
-  bottom: 0;
-
+.page-wrapper {
   display: flex;
-  gap: 30px;
-  align-items: stretch;
-
-  padding: 20px;
+  height: calc(100vh - 120px);
 }
-
-/* ===== SIDEBAR ===== */
 
 .sidebar {
-  width: 280px;
-  background: white;
-  border: 1px solid #ddd;
-  padding: 15px;
-  border-radius: 8px;
-  height: 100%;
-  overflow: auto;
+  width: 260px;
+  background: #ffffff;
+  padding: 20px;
+  border-right: 1px solid #ddd;
+  overflow-y: auto;
 }
 
-.sidebar-title {
+.content {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+/* ===== FILTR ===== */
+
+.filter-title {
   text-align: center;
-  margin: 6px 0 14px 0;
+  margin-bottom: 15px;
 }
 
-.filter-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 12px;
+.sidebar button {
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 8px;
+  border: 1px solid #bbb;
+  background: #e6e6e6;
+  cursor: pointer;
 }
 
-.filter-container {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.sidebar button:hover {
+  background: #dcdcdc;
 }
 
 .filter-btn {
+  display: block;
   width: 100%;
-  text-align: left;
-
-  padding: 10px 12px;
-  border-radius: 999px;
-
-  background: #fff;
-  border: 1px solid #e5e5e5;
-
+  padding: 10px;
+  margin-bottom: 10px;
+  border-radius: 20px;
+  border: 1px solid #ccc;
+  background: #ffffff;
   cursor: pointer;
+  text-align: left;
 }
 
 .filter-btn:hover {
-  background: #f6f6f6;
+  background: #f2f2f2;
 }
 
-/* ===== PRAVÁ ČÁST (SKROLUJE) ===== */
-
-.content-scroll {
-  flex: 1;
-  height: 100%;
-  overflow-y: auto;
-  padding-right: 6px;
+.active-green {
+  background: #b9e4b9 !important;
+  border-color: #7ac77a !important;
 }
+
+/* ===== MENU ===== */
 
 .restaurant {
-  border: 1px solid #ccc;
+  background: #ffffff;
   padding: 15px;
   margin-bottom: 20px;
-  background: white;
-  border-radius: 8px;
+  border-radius: 6px;
+  border: 1px solid #ddd;
 }
 
 .meal {
-  margin-left: 20px;
+  margin-bottom: 10px;
 }
 
 .small-muted {
   color: #666;
-  font-size: 12px;
 }

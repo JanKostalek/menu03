@@ -1,43 +1,43 @@
 <!DOCTYPE html>
 <html lang="cs">
 <head>
-  <meta charset="UTF-8">
-  <title>Menu03</title>
-  <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <title>Restaurace - Denní menu</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
-<header class="app-header">
-  <h1 class="app-title">Restaurace - Denní menu</h1>
+  <div class="header-fixed">
+    <h1>Restaurace - Denní menu</h1>
 
-  <div class="buttons top-buttons">
-    <button onclick="loadToday()">Dnešní menu</button>
-    <button onclick="loadAll()">Celé menu</button>
-    <button onclick="openAdmin()">Přidat restauraci</button>
-    <button onclick="openSuggestion()">Návrh restaurace</button>
-    <button id="btnCalories" onclick="toggleCalories()">Kalorická informace</button>
+    <div class="top-bar">
+      <div class="left-buttons">
+        <button onclick="loadToday()">Dnešní menu</button>
+        <button onclick="loadAll()">Celé menu</button>
+      </div>
+
+      <div class="right-buttons">
+        <button onclick="openSuggestion()">Návrh restaurace</button>
+        <button onclick="openAdmin()">Administrace</button>
+      </div>
+    </div>
   </div>
-</header>
 
-<div class="app-body">
-  <aside class="sidebar">
-    <h3 class="sidebar-title">Vyber restauraci</h3>
+  <div class="page-wrapper">
+    <div class="sidebar">
+      <h2 class="filter-title">Vyber restauraci</h2>
 
-    <div class="filter-actions">
       <button onclick="selectAll(true)">Vybrat vše</button>
       <button onclick="selectAll(false)">Zrušit výběr</button>
+
+      <div id="filterContainer"></div>
     </div>
 
-    <div id="filterContainer" class="filter-container">
-      Načítám…
+    <div class="content">
+      <div id="menuContainer"></div>
     </div>
-  </aside>
+  </div>
 
-  <main class="content-scroll">
-    <div id="menuContainer"></div>
-  </main>
-</div>
-
-<script src="script.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>
