@@ -1,5 +1,5 @@
 import { kv } from "@vercel/kv";
-import cheerio from "cheerio";
+import { load as loadHtml } from "cheerio";
 import fs from "fs";
 import path from "path";
 
@@ -28,12 +28,10 @@ function cleanText(s) {
 }
 
 function extractMealsFromHtml(html) {
-  const $ = cheerio.load(html);
+  const $ = loadHtml(html);
 
-  // vyhoď skripty/styly
   $("script, style, noscript").remove();
 
-  // prioritně zkus najít něco jako "menu" sekci – když ne, vezmeme celý body
   let root = $("main");
   if (!root || root.length === 0) root = $("#content");
   if (!root || root.length === 0) root = $("body");
@@ -41,19 +39,16 @@ function extractMealsFromHtml(html) {
   const text = cleanText(root.text());
   if (!text) return [];
 
-  // rozdělení na řádky, odfiltruj krátké/nesmysly
   const lines = text
     .split("\n")
     .map(l => cleanText(l))
     .filter(l => l.length >= 3);
 
-  // lehká deduplikace po sobě
   const uniq = [];
   for (const l of lines) {
     if (uniq.length === 0 || uniq[uniq.length - 1] !== l) uniq.push(l);
   }
 
-  // Převod na "meals"
   return uniq.slice(0, 200).map(name => ({
     name,
     price: null,
@@ -63,17 +58,15 @@ function extractMealsFromHtml(html) {
 }
 
 async function loadRestaurants() {
-  // primárně KV (stejné jako /api/restaurants)
   const kvList = await kv.get("restaurants:list");
   if (Array.isArray(kvList) && kvList.length) return kvList;
 
-  // fallback: restaurants.json v rootu (pokud existuje)
+  // fallback: restaurants.json v rootu
   try {
     const p = path.join(process.cwd(), "restaurants.json");
     const raw = fs.readFileSync(p, "utf-8");
     const data = JSON.parse(raw);
     if (Array.isArray(data)) {
-      // sjednotit na {id,name,url}
       return data.map((r, i) => ({
         id: r.id || String(i + 1),
         name: r.name,
@@ -100,31 +93,24 @@ async function fetchWithTimeout(url, ms = 15000) {
 
 async function buildMenus(type) {
   const restaurants = await loadRestaurants();
-
   const out = [];
+
   for (const r of restaurants) {
     const name = r?.name || "Neznámá restaurace";
     const url = r?.url || "";
 
-    // PDF / obrázek – zatím neparsujeme
     if (isPdf(url) || isImage(url)) {
       out.push({
         id: r.id || name,
         name,
         url,
         meals: [
-          {
-            name: "Menu je PDF/obrázek – parsování zatím není zapnuté.",
-            price: null,
-            day: null,
-            calories: undefined
-          }
+          { name: "Menu je PDF/obrázek – parsování zatím není zapnuté.", price: null, day: null, calories: undefined }
         ]
       });
       continue;
     }
 
-    // HTML – stáhnout a vytáhnout text
     try {
       const resp = await fetchWithTimeout(url, 15000);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -137,12 +123,7 @@ async function buildMenus(type) {
         name,
         url,
         meals: meals.length ? meals : [
-          {
-            name: "Menu se nepodařilo z textu rozpoznat.",
-            price: null,
-            day: null,
-            calories: undefined
-          }
+          { name: "Menu se nepodařilo z textu rozpoznat.", price: null, day: null, calories: undefined }
         ]
       });
     } catch (e) {
@@ -151,19 +132,13 @@ async function buildMenus(type) {
         name,
         url,
         meals: [
-          {
-            name: "Menu se nepodařilo načíst.",
-            price: null,
-            day: null,
-            calories: undefined
-          }
+          { name: "Menu se nepodařilo načíst.", price: null, day: null, calories: undefined }
         ],
         error: String(e?.message || e)
       });
     }
   }
 
-  // type zatím neovlivňuje parsing; je připraveno do budoucna
   return out;
 }
 
@@ -172,8 +147,6 @@ export default async function handler(req, res) {
     const type = (req.query?.type === "all") ? "all" : "today";
     const date = todayISO();
 
-    // ===== SERVER CACHE (KV) =====
-    // klíč je po dni → automatická invalidace „včerejší a starší“
     const cacheKey = `menus:${type}:${date}`;
     const cached = await kv.get(cacheKey);
 
@@ -181,10 +154,9 @@ export default async function handler(req, res) {
       return res.status(200).json(cached);
     }
 
-    // pokud není v cache, vyrob a ulož
     const menus = await buildMenus(type);
 
-    // ulož na 36h (přežije noc; nový den má jiný klíč)
+    // 36 hodin
     await kv.set(cacheKey, menus, { ex: 60 * 60 * 36 });
 
     return res.status(200).json(menus);
