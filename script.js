@@ -5,7 +5,6 @@ let menuLoading = false;
 let menuError = "";
 
 const COOKIE_FILTERS = "menu03_filters";
-const COOKIE_CALORIES = "menu03_calories";
 const COOKIE_VISITED = "menu03_visited";
 
 const LS_MENU_CACHE_TODAY = "menu03_menu_cache_today";
@@ -16,7 +15,6 @@ const LS_MENU_CACHE_DATE_ALL = "menu03_menu_cache_date_all";
 /**
  * Domény, které typicky blokují vložení do iframe (X-Frame-Options / CSP).
  * Pro tyto domény NEBUDEME iframe vůbec zobrazovat, jen tlačítko "Otevřít PDF" + hláška.
- * Přidej sem další domény, pokud narazíš na podobný problém.
  */
 const EMBED_BLOCKED_DOMAINS = [
   "holidayinn.cz",
@@ -82,23 +80,52 @@ function isEmbedBlocked(url) {
   });
 }
 
+/* ===== POPUP OPEN ===== */
+
+function openPdfPopup(url) {
+  const w = Math.min(1200, window.screen.width - 60);
+  const h = Math.min(900, window.screen.height - 80);
+
+  const left = Math.max(0, Math.floor((window.screen.width - w) / 2));
+  const top = Math.max(0, Math.floor((window.screen.height - h) / 2));
+
+  // Pozn.: prohlížeče mohou některé volby ignorovat (hlavně "location=no").
+  const features =
+    `popup=yes,` +
+    `width=${w},height=${h},left=${left},top=${top},` +
+    `toolbar=no,menubar=no,location=no,status=no,` +
+    `scrollbars=yes,resizable=yes`;
+
+  const win = window.open(url, "menu_pdf_popup", features);
+  if (!win) {
+    // pokud popup blokuje, aspoň otevřít v nové záložce
+    window.open(url, "_blank", "noopener,noreferrer");
+    return;
+  }
+  win.opener = null;
+  win.focus();
+}
+
+/* ===== UI ICONS ===== */
+
 function iconExternal() {
   return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7h-2V6.41l-9.29 9.3-1.42-1.42 9.3-9.29H14V3z"></path><path d="M5 5h6v2H7v10h10v-4h2v6H5V5z"></path></svg>`;
 }
+
+/* ===== SOURCE BLOCK ===== */
 
 function buildSourceBlock(url) {
   const wrap = document.createElement("div");
   wrap.className = "source-block";
 
-  // PDF
   if (isPdfUrl(url)) {
     const blocked = isEmbedBlocked(url);
 
     wrap.innerHTML = `
       <div class="source-actions">
-        <a class="btn-action btn-pdf" href="${escapeHtmlAttr(url)}" target="_blank" rel="noopener noreferrer">
+        <button type="button" class="btn-action btn-pdf js-open-pdf" data-url="${escapeHtmlAttr(url)}">
           ${iconExternal()} <span>Otevřít PDF</span>
-        </a>
+        </button>
       </div>
 
       ${
@@ -117,7 +144,6 @@ function buildSourceBlock(url) {
     return wrap;
   }
 
-  // Obrázek
   if (isImageUrl(url)) {
     wrap.innerHTML = `
       <div class="source-actions">
@@ -133,7 +159,6 @@ function buildSourceBlock(url) {
     return wrap;
   }
 
-  // Jiné URL
   wrap.innerHTML = `
     <div class="source-actions">
       <a class="btn-action" href="${escapeHtmlAttr(url)}" target="_blank" rel="noopener noreferrer">
@@ -142,30 +167,6 @@ function buildSourceBlock(url) {
     </div>
   `;
   return wrap;
-}
-
-/* ===== KALORIE (COOKIE) ===== */
-
-function caloriesEnabled() {
-  return getCookie(COOKIE_CALORIES) === "1";
-}
-
-function setCaloriesEnabled(v) {
-  setCookie(COOKIE_CALORIES, v ? "1" : "0", 365);
-  updateCaloriesButton();
-}
-
-function toggleCalories() {
-  setCaloriesEnabled(!caloriesEnabled());
-  renderMenus();
-}
-
-function updateCaloriesButton() {
-  const btn = document.getElementById("btnCalories");
-  if (!btn) return;
-
-  if (caloriesEnabled()) btn.classList.add("active-green");
-  else btn.classList.remove("active-green");
 }
 
 /* ===== FILTRY (COOKIE) ===== */
@@ -263,8 +264,6 @@ function setDefaultFirstVisitState() {
     if (r?.name) f[String(r.name).toLowerCase()] = false;
   });
   saveFilters(f);
-
-  setCookie(COOKIE_CALORIES, "0", 365);
 }
 
 /* ===== RESTAURACE LIST (API) ===== */
@@ -282,11 +281,9 @@ async function loadRestaurantsList() {
     setDefaultFirstVisitState();
     markVisited();
   } else {
-    if (getCookie(COOKIE_CALORIES) === null) setCookie(COOKIE_CALORIES, "0", 365);
     if (getCookie(COOKIE_FILTERS) === null) saveFilters({});
   }
 
-  updateCaloriesButton();
   renderFilters();
 }
 
@@ -318,7 +315,7 @@ function loadLocalCache(type) {
 function saveLocalCache(type, data) {
   try {
     localStorage.setItem(getCacheKey(type), JSON.stringify(data || []));
-    localStorage.setItem(getDateKey(type), type === "today" ? todayISO() : todayISO());
+    localStorage.setItem(getDateKey(type), todayISO());
   } catch {
     // ignore
   }
@@ -414,15 +411,9 @@ function renderMenus() {
       const price = m.price ? `${m.price} Kč` : "—";
       const day = m.day ? `(${m.day})` : "";
 
-      let calorieLine = "";
-      if (caloriesEnabled()) {
-        const kcal = (m.calories ?? "?");
-        calorieLine = ` | 🔥 ${escapeHtml(String(kcal))} kcal`;
-      }
-
       mealDiv.innerHTML = `
         <div><b>${escapeHtml(m.name)}</b> ${escapeHtml(day)}</div>
-        <div>💰 ${escapeHtml(price)}${calorieLine}</div>
+        <div>💰 ${escapeHtml(price)}</div>
         <hr>
       `;
 
@@ -430,6 +421,15 @@ function renderMenus() {
     });
 
     container.appendChild(div);
+  });
+
+  // PDF popup tlačítka
+  container.querySelectorAll(".js-open-pdf").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const url = e.currentTarget.getAttribute("data-url");
+      if (!url) return;
+      openPdfPopup(url);
+    });
   });
 }
 
