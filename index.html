@@ -13,6 +13,7 @@
   <button onclick="loadToday()">Dnešní menu</button>
   <button onclick="loadAll()">Celé menu</button>
   <button onclick="openAdmin()">Přidat restauraci</button>
+  <button onclick="openSuggestion()">Návrh restaurace</button>
 </div>
 
 <div class="layout">
@@ -39,5 +40,10 @@
 </div>
 
 <script src="script.js"></script>
+<script>
+  function openSuggestion() {
+    window.open("/suggest.html", "_blank");
+  }
+</script>
 </body>
 </html>

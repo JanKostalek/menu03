@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <title>Návrh restaurace</title>
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    body { max-width: 900px; margin: 0 auto; }
+    .card { background:#fff; border:1px solid #ddd; padding:16px; border-radius:8px; }
+    .row { display:flex; gap:10px; flex-wrap:wrap; }
+    .row input { flex: 1 1 320px; padding:10px; }
+    .hint { color:#666; font-size:12px; margin-top:6px; }
+    .error { color:#b00020; font-size: 13px; margin-top: 10px; }
+    .ok { color:#0b7a0b; font-size: 13px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+
+<h1>Návrh restaurace</h1>
+
+<div class="card">
+  <p class="hint">
+    Vyplň prosím název a email. Ostatní pole jsou volitelná.
+  </p>
+
+  <div class="row">
+    <input id="name" type="text" placeholder="Název restaurace *" />
+    <input id="menuUrl" type="text" placeholder="Adresa jídelního lístku (URL)" />
+  </div>
+
+  <div class="row">
+    <input id="submitter" type="text" placeholder="Zadavatel (jméno)" />
+    <input id="email" type="email" placeholder="Email kontakt *" />
+  </div>
+
+  <div class="row">
+    <button onclick="submitSuggestion()">Uložit</button>
+    <button onclick="window.close()">Zavřít</button>
+  </div>
+
+  <div id="msg" class="hint"></div>
+</div>
+
+<script>
+  function isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || "").trim());
+  }
+
+  async function submitSuggestion() {
+    const name = document.getElementById("name").value.trim();
+    const menuUrl = document.getElementById("menuUrl").value.trim();
+    const submitter = document.getElementById("submitter").value.trim();
+    const email = document.getElementById("email").value.trim();
+
+    const msg = document.getElementById("msg");
+    msg.className = "error";
+    msg.textContent = "";
+
+    if (!name) {
+      msg.textContent = "Chybí název restaurace.";
+      return;
+    }
+    if (!email) {
+      msg.textContent = "Chybí email.";
+      return;
+    }
+    if (!isValidEmail(email)) {
+      msg.textContent = "Email nevypadá správně.";
+      return;
+    }
+
+    msg.className = "hint";
+    msg.textContent = "Odesílám…";
+
+    const resp = await fetch("/api/suggestions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, menuUrl, submitter, email })
+    });
+
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      msg.className = "error";
+      msg.textContent = "Nepodařilo se uložit: " + (data.error || resp.status);
+      return;
+    }
+
+    msg.className = "ok";
+    msg.textContent = "Uloženo ✅ Návrh se objeví v administraci.";
+
+    // vyčistit formulář
+    document.getElementById("name").value = "";
+    document.getElementById("menuUrl").value = "";
+    document.getElementById("submitter").value = "";
+    document.getElementById("email").value = "";
+  }
+</script>
+
+</body>
+</html>

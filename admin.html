@@ -1,18 +1,20 @@
 <!DOCTYPE html>
 <html lang="cs">
 <head>
-  <meta charset="UTF-8" />
-  <title>Admin - Menu03</title>
+  <meta charset="UTF-8">
+  <title>Admin - Restaurace</title>
   <link rel="stylesheet" href="style.css" />
   <style>
     .row { display:flex; gap:10px; flex-wrap:wrap; }
-    .row input { flex: 1 1 320px; padding:10px; }
+    .row input { flex: 1 1 320px; padding:10px; margin:6px 0; }
     .list-item { display:flex; gap:10px; align-items:center; justify-content:space-between; }
     .list-left { min-width: 0; }
     .muted { color:#666; font-size: 12px; word-break: break-all; }
     .danger { background:#b00020; color:white; border:none; padding:8px 10px; cursor:pointer; }
     .danger:hover { opacity:0.9; }
     .ok { color: #0b7a0b; }
+    .section { border:1px solid #ccc; padding:15px; margin-top:20px; background:#fff; border-radius:8px; }
+    .kv { word-break: break-word; }
   </style>
 </head>
 <body>
@@ -23,7 +25,7 @@
   <button onclick="goBack()">← Zpět na menu</button>
 </div>
 
-<div class="restaurant">
+<div class="section">
   <h3>Přidat restauraci</h3>
   <div class="row">
     <input type="text" id="name" placeholder="Název restaurace" />
@@ -35,135 +37,195 @@
   </div>
 </div>
 
-<div class="restaurant">
+<!-- NOVÉ: NÁVRHY -->
+<div class="section">
+  <h3>Návrhy restaurací</h3>
+  <div id="suggestions" class="muted">Načítám…</div>
+</div>
+
+<div class="section">
   <h3>Seznam restaurací</h3>
   <div id="list" class="muted">Načítám…</div>
 </div>
 
 <script>
-  const PASSWORD = "H3510";
+const PASSWORD = "H3510";
 
-  const entered = prompt("Zadej heslo:");
-  if (entered !== PASSWORD) {
-    alert("Špatné heslo");
-    window.location.href = "/";
+const entered = prompt("Zadej heslo:");
+if (entered !== PASSWORD) {
+  alert("Špatné heslo");
+  window.location.href = "/";
+}
+
+function goBack() {
+  window.location.href = "/";
+}
+
+const statusEl = document.getElementById("status");
+const listEl = document.getElementById("list");
+const suggestionsEl = document.getElementById("suggestions");
+
+function setStatus(msg, isOk=false) {
+  statusEl.textContent = msg || "";
+  statusEl.className = "muted" + (isOk ? " ok" : "");
+}
+
+async function fetchRestaurants() {
+  const resp = await fetch("/api/restaurants");
+  if (!resp.ok) throw new Error("GET /api/restaurants " + resp.status);
+  return await resp.json();
+}
+
+async function fetchSuggestions() {
+  const resp = await fetch("/api/suggestions");
+  if (!resp.ok) throw new Error("GET /api/suggestions " + resp.status);
+  return await resp.json();
+}
+
+function renderRestaurants(restaurants) {
+  if (!restaurants || restaurants.length === 0) {
+    listEl.innerHTML = "<div class='muted'>Zatím žádné restaurace.</div>";
+    return;
   }
 
-  function goBack() {
-    window.location.href = "/";
+  const html = restaurants.map(r => `
+    <div class="list-item">
+      <div class="list-left">
+        <div><b>${escapeHtml(r.name)}</b></div>
+        <div class="muted kv">${escapeHtml(r.url)}</div>
+      </div>
+      <div>
+        <button class="danger" onclick="deleteRestaurant('${r.id}', '${escapeHtmlAttr(r.name)}')">Smazat</button>
+      </div>
+    </div>
+    <hr>
+  `).join("");
+
+  listEl.innerHTML = html;
+}
+
+function renderSuggestions(items) {
+  if (!items || items.length === 0) {
+    suggestionsEl.innerHTML = "<div class='muted'>Zatím žádné návrhy.</div>";
+    return;
   }
 
-  const statusEl = document.getElementById("status");
-  const listEl = document.getElementById("list");
-
-  function setStatus(msg, isOk=false) {
-    statusEl.textContent = msg || "";
-    statusEl.className = "muted" + (isOk ? " ok" : "");
-  }
-
-  async function fetchRestaurants() {
-    const resp = await fetch("/api/restaurants");
-    if (!resp.ok) throw new Error("GET /api/restaurants " + resp.status);
-    return await resp.json();
-  }
-
-  function renderList(restaurants) {
-    if (!restaurants || restaurants.length === 0) {
-      listEl.innerHTML = "<div class='muted'>Zatím žádné restaurace.</div>";
-      return;
-    }
-
-    const html = restaurants.map(r => `
+  const html = items.map(s => {
+    const addr = s.menuUrl && s.menuUrl.trim() ? s.menuUrl.trim() : "neuvedeno";
+    const who = (s.submitter && s.submitter.trim()) ? s.submitter.trim() : "neuvedeno";
+    return `
       <div class="list-item">
         <div class="list-left">
-          <div><b>${escapeHtml(r.name)}</b></div>
-          <div class="muted">${escapeHtml(r.url)}</div>
+          <div><b>${escapeHtml(s.name)}</b></div>
+          <div class="muted kv">${escapeHtml(addr)}</div>
+          <div class="muted">Jméno: ${escapeHtml(who)} | Email: ${escapeHtml(s.email)}</div>
         </div>
         <div>
-          <button class="danger" onclick="deleteRestaurant('${r.id}', '${escapeHtmlAttr(r.name)}')">Smazat</button>
+          <button class="danger" onclick="deleteSuggestion('${s.id}', '${escapeHtmlAttr(s.name)}')">Smazat</button>
         </div>
       </div>
       <hr>
-    `).join("");
+    `;
+  }).join("");
 
-    listEl.innerHTML = html;
+  suggestionsEl.innerHTML = html;
+}
+
+async function loadRestaurants() {
+  listEl.textContent = "Načítám…";
+  try {
+    const restaurants = await fetchRestaurants();
+    renderRestaurants(restaurants);
+  } catch (e) {
+    listEl.innerHTML = "<div class='muted'>Nepodařilo se načíst seznam.</div>";
+    setStatus("Chyba: " + (e.message || e), false);
+  }
+}
+
+async function loadSuggestions() {
+  suggestionsEl.textContent = "Načítám…";
+  try {
+    const items = await fetchSuggestions();
+    renderSuggestions(items);
+  } catch (e) {
+    suggestionsEl.innerHTML = "<div class='muted'>Nepodařilo se načíst návrhy.</div>";
+  }
+}
+
+async function addRestaurant() {
+  const name = document.getElementById("name").value.trim();
+  const url = document.getElementById("url").value.trim();
+
+  if (!name || !url) {
+    alert("Vyplň název i URL.");
+    return;
   }
 
-  async function loadList() {
-    setStatus("");
-    listEl.textContent = "Načítám…";
-    try {
-      const restaurants = await fetchRestaurants();
-      renderList(restaurants);
-    } catch (e) {
-      listEl.innerHTML = "<div class='muted'>Nepodařilo se načíst seznam.</div>";
-      setStatus("Chyba: " + (e.message || e), false);
-    }
+  setStatus("Ukládám…");
+  const resp = await fetch("/api/restaurants", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, url })
+  });
+
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    setStatus("Nepodařilo se uložit: " + (data.error || resp.status), false);
+    return;
   }
 
-  async function addRestaurant() {
-    const name = document.getElementById("name").value.trim();
-    const url = document.getElementById("url").value.trim();
+  document.getElementById("name").value = "";
+  document.getElementById("url").value = "";
 
-    if (!name || !url) {
-      alert("Vyplň název i URL.");
-      return;
-    }
+  setStatus("Uloženo ✅", true);
+  await loadRestaurants();
+}
 
-    setStatus("Ukládám…");
-    const resp = await fetch("/api/restaurants", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, url })
-    });
+async function deleteRestaurant(id, name) {
+  const ok = confirm(`Opravdu smazat "${name}"?`);
+  if (!ok) return;
 
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      setStatus("Nepodařilo se uložit: " + (data.error || resp.status), false);
-      return;
-    }
+  setStatus("Mažu…");
+  const resp = await fetch("/api/restaurants?id=" + encodeURIComponent(id), { method: "DELETE" });
+  const data = await resp.json().catch(() => ({}));
 
-    document.getElementById("name").value = "";
-    document.getElementById("url").value = "";
-
-    setStatus("Uloženo ✅", true);
-    await loadList(); // okamžitě refresh seznamu
+  if (!resp.ok) {
+    setStatus("Nepodařilo se smazat: " + (data.error || resp.status), false);
+    return;
   }
 
-  async function deleteRestaurant(id, name) {
-    const ok = confirm(`Opravdu smazat "${name}"?`);
-    if (!ok) return;
+  setStatus("Smazáno ✅", true);
+  await loadRestaurants();
+}
 
-    setStatus("Mažu…");
-    const resp = await fetch("/api/restaurants?id=" + encodeURIComponent(id), {
-      method: "DELETE"
-    });
+async function deleteSuggestion(id, name) {
+  const ok = confirm(`Opravdu smazat návrh "${name}"?`);
+  if (!ok) return;
 
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok) {
-      setStatus("Nepodařilo se smazat: " + (data.error || resp.status), false);
-      return;
-    }
-
-    setStatus("Smazáno ✅", true);
-    await loadList();
+  const resp = await fetch("/api/suggestions?id=" + encodeURIComponent(id), { method: "DELETE" });
+  if (!resp.ok) {
+    alert("Nepodařilo se smazat.");
+    return;
   }
 
-  // mini-escapes kvůli bezpečnému renderu
-  function escapeHtml(str) {
-    return String(str)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
-  }
-  function escapeHtmlAttr(str) {
-    // do confirmu stačí to samé
-    return escapeHtml(str);
-  }
+  await loadSuggestions();
+}
 
-  loadList();
+// mini-escapes
+function escapeHtml(str) {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+function escapeHtmlAttr(str) {
+  return escapeHtml(str);
+}
+
+loadSuggestions();
+loadRestaurants();
 </script>
 
 </body>
