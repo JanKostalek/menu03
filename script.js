@@ -4,14 +4,19 @@ let currentType = "today";
 let menuLoading = false;
 let menuError = "";
 
+/* cookies */
 const COOKIE_FILTERS = "menu03_filters";
 const COOKIE_CALORIES = "menu03_calories";
 const COOKIE_VISITED = "menu03_visited";
 
-const LS_MENU_CACHE_TODAY = "menu03_menu_cache_today";
-const LS_MENU_CACHE_ALL = "menu03_menu_cache_all";
-const LS_MENU_CACHE_DATE_TODAY = "menu03_menu_cache_date_today";
-const LS_MENU_CACHE_DATE_ALL = "menu03_menu_cache_date_all";
+/* local cache version */
+const CLIENT_CACHE_VERSION = "v2"; // <-- změna verze cache (localStorage)
+
+/* denní cache pro menu (localStorage) */
+const LS_MENU_CACHE_TODAY = `menu03_${CLIENT_CACHE_VERSION}_menu_cache_today`;
+const LS_MENU_CACHE_ALL = `menu03_${CLIENT_CACHE_VERSION}_menu_cache_all`;
+const LS_MENU_CACHE_DATE_TODAY = `menu03_${CLIENT_CACHE_VERSION}_menu_cache_date_today`;
+const LS_MENU_CACHE_DATE_ALL = `menu03_${CLIENT_CACHE_VERSION}_menu_cache_date_all`;
 
 /* ===== COOKIES HELPERS ===== */
 
@@ -45,7 +50,7 @@ function todayISO() {
   return `${y}-${m}-${day}`;
 }
 
-/* ===== KALORIE (COOKIE) ===== */
+/* ===== KALORIE ===== */
 
 function caloriesEnabled() {
   return getCookie(COOKIE_CALORIES) === "1";
@@ -69,7 +74,7 @@ function updateCaloriesButton() {
   else btn.classList.remove("active-green");
 }
 
-/* ===== FILTRY (COOKIE) ===== */
+/* ===== FILTRY ===== */
 
 function loadFilters() {
   try {
@@ -100,7 +105,7 @@ function isEnabledByFilter(name) {
 
 function hasAnySelected() {
   const f = loadFilters();
-  return Object.values(f).some(v => v === true);
+  return Object.values(f).some((v) => v === true);
 }
 
 /* ===== UI: FILTRY ===== */
@@ -114,11 +119,13 @@ function renderFilters() {
     return;
   }
 
-  const html = restaurantsList.map((r) => {
-    const enabled = isEnabledByFilter(r.name);
-    const cls = enabled ? "filter-btn active-green" : "filter-btn";
-    return `<button type="button" class="${cls}" data-name="${escapeHtmlAttr(r.name)}">${escapeHtml(r.name)}</button>`;
-  }).join("");
+  const html = restaurantsList
+    .map((r) => {
+      const enabled = isEnabledByFilter(r.name);
+      const cls = enabled ? "filter-btn active-green" : "filter-btn";
+      return `<button type="button" class="${cls}" data-name="${escapeHtmlAttr(r.name)}">${escapeHtml(r.name)}</button>`;
+    })
+    .join("");
 
   container.innerHTML = html;
 
@@ -234,7 +241,7 @@ async function loadAll() {
 }
 
 async function loadMenus(type) {
-  currentType = (type === "all") ? "all" : "today";
+  currentType = type === "all" ? "all" : "today";
   menuError = "";
 
   const cached = readMenuCache(currentType);
@@ -284,15 +291,13 @@ function renderMenus() {
   }
 
   if (!menusCache || menusCache.length === 0) {
-    if (hasAnySelected()) {
-      container.innerHTML = `<div class="restaurant"><div class="small-muted">Menu se nepodařilo načíst. Zkus obnovit stránku.</div></div>`;
-    } else {
-      container.innerHTML = `<div class="restaurant"><div class="small-muted">Vyber restauraci vlevo.</div></div>`;
-    }
+    container.innerHTML = hasAnySelected()
+      ? `<div class="restaurant"><div class="small-muted">Menu se nepodařilo načíst. Zkus obnovit stránku.</div></div>`
+      : `<div class="restaurant"><div class="small-muted">Vyber restauraci vlevo.</div></div>`;
     return;
   }
 
-  const filteredRestaurants = menusCache.filter(r => isEnabledByFilter(r.name));
+  const filteredRestaurants = menusCache.filter((r) => isEnabledByFilter(r.name));
 
   if (!filteredRestaurants.length) {
     container.innerHTML = `<div class="restaurant"><div class="small-muted">Vyber restauraci vlevo.</div></div>`;
@@ -304,18 +309,15 @@ function renderMenus() {
     div.className = "restaurant";
 
     const source = r.source || null;
+    const url = r.url || (source?.url || "");
 
-    // Nadpis + zdroj link
-    const sourceLink = r.url
-      ? `<div class="small-muted">Zdroj: <a href="${escapeHtmlAttr(r.url)}" target="_blank" rel="noreferrer">otevřít</a></div>`
+    const sourceLink = url
+      ? `<div class="small-muted">Zdroj: <a href="${escapeHtmlAttr(url)}" target="_blank" rel="noreferrer">otevřít</a></div>`
       : "";
 
     div.innerHTML = `<h3>${escapeHtml(r.name)}</h3>${sourceLink}`;
 
-    // PDF / IMAGE: zobrazit originál
     if (source && (source.type === "pdf" || source.type === "image")) {
-      const url = source.url || r.url || "";
-
       const wrap = document.createElement("div");
       wrap.className = "embed-wrap";
 
@@ -323,17 +325,17 @@ function renderMenus() {
         wrap.innerHTML = `
           <div class="small-muted">
             PDF menu (pokud se nezobrazí, otevři v novém okně):
-            <a href="${escapeHtmlAttr(url)}" target="_blank" rel="noreferrer">Otevřít PDF</a>
+            <a href="${escapeHtmlAttr(source.url)}" target="_blank" rel="noreferrer">Otevřít PDF</a>
           </div>
-          <iframe class="pdf-frame" src="${escapeHtmlAttr(url)}"></iframe>
+          <iframe class="pdf-frame" src="${escapeHtmlAttr(source.url)}"></iframe>
         `;
       } else {
         wrap.innerHTML = `
           <div class="small-muted">
             Obrázek menu (pokud se nezobrazí, otevři v novém okně):
-            <a href="${escapeHtmlAttr(url)}" target="_blank" rel="noreferrer">Otevřít obrázek</a>
+            <a href="${escapeHtmlAttr(source.url)}" target="_blank" rel="noreferrer">Otevřít obrázek</a>
           </div>
-          <img class="menu-image" src="${escapeHtmlAttr(url)}" alt="Menu obrázek">
+          <img class="menu-image" src="${escapeHtmlAttr(source.url)}" alt="Menu obrázek">
         `;
       }
 
@@ -342,7 +344,6 @@ function renderMenus() {
       return;
     }
 
-    // HTML: vypsat meals jako doposud
     (r.meals || []).forEach((m) => {
       const mealDiv = document.createElement("div");
       mealDiv.className = "meal";
@@ -352,7 +353,7 @@ function renderMenus() {
 
       let calorieLine = "";
       if (caloriesEnabled()) {
-        const kcal = (m.calories ?? "?");
+        const kcal = m.calories ?? "?";
         calorieLine = ` | 🔥 ${escapeHtml(String(kcal))} kcal`;
       }
 
@@ -361,6 +362,7 @@ function renderMenus() {
         <div>💰 ${escapeHtml(price)}${calorieLine}</div>
         <hr>
       `;
+
       div.appendChild(mealDiv);
     });
 

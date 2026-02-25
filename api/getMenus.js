@@ -3,6 +3,8 @@ import { load as loadHtml } from "cheerio";
 import fs from "fs";
 import path from "path";
 
+const CACHE_VERSION = "v2"; // <-- změna verze cache (KV)
+
 function todayISO() {
   const d = new Date();
   const y = d.getFullYear();
@@ -41,15 +43,15 @@ function extractMealsFromHtml(html) {
 
   const lines = text
     .split("\n")
-    .map(l => cleanText(l))
-    .filter(l => l.length >= 3);
+    .map((l) => cleanText(l))
+    .filter((l) => l.length >= 3);
 
   const uniq = [];
   for (const l of lines) {
     if (uniq.length === 0 || uniq[uniq.length - 1] !== l) uniq.push(l);
   }
 
-  return uniq.slice(0, 200).map(name => ({
+  return uniq.slice(0, 200).map((name) => ({
     name,
     price: null,
     day: null,
@@ -58,11 +60,10 @@ function extractMealsFromHtml(html) {
 }
 
 async function loadRestaurants() {
-  // primárně z KV
   const kvList = await kv.get("restaurants:list");
   if (Array.isArray(kvList) && kvList.length) return kvList;
 
-  // fallback: restaurants.json v rootu (pokud existuje)
+  // fallback: restaurants.json
   try {
     const p = path.join(process.cwd(), "restaurants.json");
     const raw = fs.readFileSync(p, "utf-8");
@@ -85,8 +86,7 @@ async function fetchWithTimeout(url, ms = 15000) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
   try {
-    const r = await fetch(url, { signal: ctrl.signal });
-    return r;
+    return await fetch(url, { signal: ctrl.signal });
   } finally {
     clearTimeout(t);
   }
@@ -94,13 +94,13 @@ async function fetchWithTimeout(url, ms = 15000) {
 
 async function buildMenus(type) {
   const restaurants = await loadRestaurants();
-
   const out = [];
+
   for (const r of restaurants) {
     const name = r?.name || "Neznámá restaurace";
     const url = r?.url || "";
 
-    // 1) PDF / obrázek: neparsujeme, jen vracíme zdroj pro zobrazení
+    // PDF: jen zobrazit
     if (isPdf(url)) {
       out.push({
         id: r.id || name,
@@ -112,6 +112,7 @@ async function buildMenus(type) {
       continue;
     }
 
+    // obrázek: jen zobrazit
     if (isImage(url)) {
       out.push({
         id: r.id || name,
@@ -123,7 +124,7 @@ async function buildMenus(type) {
       continue;
     }
 
-    // 2) HTML: stáhnout + parsovat text (jako doposud)
+    // HTML: parsovat
     try {
       const resp = await fetchWithTimeout(url, 15000);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -136,9 +137,9 @@ async function buildMenus(type) {
         name,
         url,
         source: { type: "html", url },
-        meals: meals.length ? meals : [
-          { name: "Menu se nepodařilo z textu rozpoznat.", price: null, day: null, calories: undefined }
-        ]
+        meals: meals.length
+          ? meals
+          : [{ name: "Menu se nepodařilo z textu rozpoznat.", price: null, day: null, calories: undefined }]
       });
     } catch (e) {
       out.push({
@@ -146,25 +147,22 @@ async function buildMenus(type) {
         name,
         url,
         source: { type: "html", url },
-        meals: [
-          { name: "Menu se nepodařilo načíst.", price: null, day: null, calories: undefined }
-        ],
+        meals: [{ name: "Menu se nepodařilo načíst.", price: null, day: null, calories: undefined }],
         error: String(e?.message || e)
       });
     }
   }
 
-  // type zatím nemění parsing; připravené do budoucna
   return out;
 }
 
 export default async function handler(req, res) {
   try {
-    const type = (req.query?.type === "all") ? "all" : "today";
+    const type = req.query?.type === "all" ? "all" : "today";
     const date = todayISO();
 
-    // KV cache per den + typ
-    const cacheKey = `menus:${type}:${date}`;
+    // KV cache (verzovaná)
+    const cacheKey = `menus:${CACHE_VERSION}:${type}:${date}`;
     const cached = await kv.get(cacheKey);
 
     if (Array.isArray(cached)) {
