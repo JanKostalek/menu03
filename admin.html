@@ -5,41 +5,78 @@
   <title>Admin - Restaurace</title>
   <link rel="stylesheet" href="style.css" />
   <style>
-    .topbar {
+    .topbar{
       display:flex;
       justify-content: space-between;
-      align-items: center;
-      margin: 10px 0 15px 0;
+      align-items:flex-start;
       gap: 10px;
+      margin: 10px 0 15px 0;
+    }
+    .rightTop{
+      display:flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+      min-width: 260px;
+    }
+    .recache-status{
+      font-size: 12px;
+      color: #0b7a0b;
+      min-height: 16px; /* aby se layout nehýbal */
+      text-align: right;
     }
 
     .row { display:flex; gap:10px; flex-wrap:wrap; }
     .row input, .row select { flex: 1 1 320px; padding:10px; margin:6px 0; }
 
+    .section { border:1px solid #ccc; padding:15px; margin-top:20px; background:#fff; border-radius:8px; }
+
     .list-item { display:flex; gap:10px; align-items:center; justify-content:space-between; }
-    .list-left { min-width: 0; }
+    .list-left { min-width: 0; flex: 1 1 auto; }
     .muted { color:#666; font-size: 12px; word-break: break-all; }
 
-    .danger { background:#b00020; color:white; border:none; padding:8px 10px; cursor:pointer; }
-    .danger:hover { opacity:0.9; }
-
-    .btn {
+    .btn{
       padding: 8px 12px;
       border: 1px solid #bbb;
       background: #e6e6e6;
       cursor: pointer;
       border-radius: 6px;
+      font-family: inherit;
     }
-    .btn:hover { background:#dcdcdc; }
+    .btn:hover{ background:#dcdcdc; }
 
-    .btn-recache {
-      font-weight: 700;
+    .danger { background:#b00020; color:white; border:none; padding:8px 10px; cursor:pointer; border-radius:6px; }
+    .danger:hover { opacity:0.9; }
+
+    .updateBtn{
+      background:#2d6cdf;
+      color:#fff;
+      border:none;
+      padding:8px 10px;
+      cursor:pointer;
+      border-radius:6px;
+      margin-right: 8px;
     }
+    .updateBtn:hover{ opacity:0.9; }
 
-    .ok { color: #0b7a0b; }
-    .section { border:1px solid #ccc; padding:15px; margin-top:20px; background:#fff; border-radius:8px; }
-    .kv { word-break: break-word; }
     .pill { display:inline-block; padding:3px 8px; border:1px solid #ccc; border-radius:999px; font-size:12px; background:#f3f3f3; }
+
+    .modeBox{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:6px; }
+    .modeBtn{
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid #bbb;
+      background: #f3f3f3;
+      cursor:pointer;
+      font-size: 12px;
+    }
+    .modeBtn.active{
+      background: #b9e4b9;
+      border-color: #7ac77a;
+    }
+
+    .actionsRight{ display:flex; gap: 0px; align-items:center; }
+    hr{ border:none; border-top:1px solid #ddd; margin: 12px 0; }
   </style>
 </head>
 <body>
@@ -49,7 +86,10 @@
 <div class="topbar">
   <button class="btn" onclick="goBack()">← Zpět na menu</button>
 
-  <button class="btn btn-recache" onclick="reCacheAll()">ReCache</button>
+  <div class="rightTop">
+    <button class="btn" onclick="reCacheAll()">ReCache</button>
+    <div id="recacheStatus" class="recache-status"></div>
+  </div>
 </div>
 
 <div class="section">
@@ -97,6 +137,7 @@ function goBack() {
 const statusEl = document.getElementById("status");
 const listEl = document.getElementById("list");
 const suggestionsEl = document.getElementById("suggestions");
+const recacheStatusEl = document.getElementById("recacheStatus");
 
 // stejné klíče jako v script.js (hlavní stránka)
 const LS_MENU_CACHE_TODAY = "menu03_menu_cache_today";
@@ -105,9 +146,16 @@ const LS_MENU_CACHE_DATE_TODAY = "menu03_menu_cache_date_today";
 const LS_MENU_CACHE_DATE_ALL = "menu03_menu_cache_date_all";
 const LS_RESTAURANTS_SIG = "menu03_restaurants_sig";
 
+// pending změny mode po kliknutí Parse/Embed (uloží se až Update)
+const pendingModeById = new Map();
+
 function setStatus(msg, isOk=false) {
   statusEl.textContent = msg || "";
   statusEl.className = "muted" + (isOk ? " ok" : "");
+}
+
+function setRecacheStatus(msg) {
+  recacheStatusEl.textContent = msg || "";
 }
 
 async function fetchRestaurants() {
@@ -122,10 +170,19 @@ async function fetchSuggestions() {
   return await resp.json();
 }
 
-function modeLabel(m) {
+function clearLocalCacheOnly() {
+  try {
+    localStorage.removeItem(LS_MENU_CACHE_TODAY);
+    localStorage.removeItem(LS_MENU_CACHE_ALL);
+    localStorage.removeItem(LS_MENU_CACHE_DATE_TODAY);
+    localStorage.removeItem(LS_MENU_CACHE_DATE_ALL);
+    localStorage.removeItem(LS_RESTAURANTS_SIG);
+  } catch {}
+}
+
+function normalizeMode(m) {
   const v = String(m || "").toLowerCase();
-  if (v === "embed") return "embed";
-  return "parse";
+  return (v === "embed" || v === "parse") ? v : "parse";
 }
 
 function renderRestaurants(restaurants) {
@@ -134,21 +191,39 @@ function renderRestaurants(restaurants) {
     return;
   }
 
-  const html = restaurants.map(r => `
-    <div class="list-item">
-      <div class="list-left">
-        <div>
-          <b>${escapeHtml(r.name)}</b>
-          <span class="pill">${escapeHtml(modeLabel(r.mode))}</span>
+  const html = restaurants.map(r => {
+    const currentMode = normalizeMode(r.mode);
+    const pending = pendingModeById.has(r.id) ? pendingModeById.get(r.id) : currentMode;
+
+    const parseActive = pending === "parse" ? "active" : "";
+    const embedActive = pending === "embed" ? "active" : "";
+
+    return `
+      <div class="list-item">
+        <div class="list-left">
+          <div>
+            <b>${escapeHtml(r.name)}</b>
+            <span class="pill">${escapeHtml(currentMode)}</span>
+          </div>
+
+          <div class="muted">${escapeHtml(r.url)}</div>
+
+          <div class="modeBox">
+            <span class="muted">Mode:</span>
+            <button class="modeBtn ${parseActive}" onclick="pickMode('${escapeHtmlAttr(r.id)}','parse')">Parse</button>
+            <button class="modeBtn ${embedActive}" onclick="pickMode('${escapeHtmlAttr(r.id)}','embed')">Embed</button>
+            <span class="muted">→ pak klikni Update</span>
+          </div>
         </div>
-        <div class="muted kv">${escapeHtml(r.url)}</div>
+
+        <div class="actionsRight">
+          <button class="updateBtn" onclick="updateRestaurantMode('${escapeHtmlAttr(r.id)}')">Update</button>
+          <button class="danger" onclick="deleteRestaurant('${escapeHtmlAttr(r.id)}', '${escapeHtmlAttr(r.name)}')">Smazat</button>
+        </div>
       </div>
-      <div>
-        <button class="danger" onclick="deleteRestaurant('${r.id}', '${escapeHtmlAttr(r.name)}')">Smazat</button>
-      </div>
-    </div>
-    <hr>
-  `).join("");
+      <hr>
+    `;
+  }).join("");
 
   listEl.innerHTML = html;
 }
@@ -166,11 +241,11 @@ function renderSuggestions(items) {
       <div class="list-item">
         <div class="list-left">
           <div><b>${escapeHtml(s.name)}</b></div>
-          <div class="muted kv">${escapeHtml(addr)}</div>
+          <div class="muted">${escapeHtml(addr)}</div>
           <div class="muted">Jméno: ${escapeHtml(who)} | Email: ${escapeHtml(s.email)}</div>
         </div>
         <div>
-          <button class="danger" onclick="deleteSuggestion('${s.id}', '${escapeHtmlAttr(s.name)}')">Smazat</button>
+          <button class="danger" onclick="deleteSuggestion('${escapeHtmlAttr(s.id)}', '${escapeHtmlAttr(s.name)}')">Smazat</button>
         </div>
       </div>
       <hr>
@@ -184,6 +259,13 @@ async function loadRestaurants() {
   listEl.textContent = "Načítám…";
   try {
     const restaurants = await fetchRestaurants();
+
+    // při reloadu si necháme pending mapu (jen pokud id existuje), jinak vyčistit
+    const ids = new Set(restaurants.map(r => r.id));
+    for (const k of Array.from(pendingModeById.keys())) {
+      if (!ids.has(k)) pendingModeById.delete(k);
+    }
+
     renderRestaurants(restaurants);
   } catch (e) {
     listEl.textContent = "Chyba: " + (e.message || e);
@@ -198,6 +280,44 @@ async function loadSuggestions() {
   } catch (e) {
     suggestionsEl.textContent = "Chyba: " + (e.message || e);
   }
+}
+
+function pickMode(id, mode) {
+  pendingModeById.set(id, normalizeMode(mode));
+  // rychlý re-render listu (zůstane to jednoduché)
+  loadRestaurants();
+}
+
+async function updateRestaurantMode(id) {
+  // najdi aktuální pending mode
+  const mode = pendingModeById.get(id);
+  if (!mode) {
+    alert("Nejprve vyber Parse nebo Embed.");
+    return;
+  }
+
+  setStatus("Ukládám změnu…");
+  const resp = await fetch("/api/restaurants", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, mode })
+  });
+
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    setStatus("Update selhal: " + (data.error || resp.status), false);
+    return;
+  }
+
+  // po uložení vyčisti lokální cache (aby se hlavní stránka hned chytla)
+  clearLocalCacheOnly();
+
+  setStatus("Update hotový ✅ (cache invalidována)", true);
+
+  // po uložení smažeme pending pro tento id (už je to uložené)
+  pendingModeById.delete(id);
+
+  await loadRestaurants();
 }
 
 async function addRestaurant() {
@@ -227,11 +347,9 @@ async function addRestaurant() {
   document.getElementById("url").value = "";
   document.getElementById("mode").value = "parse";
 
-  setStatus("Uloženo ✅ (cache se invalidovala automaticky)", true);
+  setStatus("Uloženo ✅ (cache invalidována automaticky)", true);
 
-  // po změně seznamu restaurací je dobré smazat lokální menu cache
   clearLocalCacheOnly();
-
   await loadRestaurants();
 }
 
@@ -244,10 +362,10 @@ async function deleteRestaurant(id, name) {
     setStatus("Nepodařilo se smazat: " + (data.error || resp.status), false);
     return;
   }
-  setStatus("Smazáno ✅ (cache se invalidovala automaticky)", true);
+  setStatus("Smazáno ✅ (cache invalidována automaticky)", true);
 
+  pendingModeById.delete(id);
   clearLocalCacheOnly();
-
   await loadRestaurants();
 }
 
@@ -264,32 +382,23 @@ async function deleteSuggestion(id, name) {
   await loadSuggestions();
 }
 
-function clearLocalCacheOnly() {
-  try {
-    localStorage.removeItem(LS_MENU_CACHE_TODAY);
-    localStorage.removeItem(LS_MENU_CACHE_ALL);
-    localStorage.removeItem(LS_MENU_CACHE_DATE_TODAY);
-    localStorage.removeItem(LS_MENU_CACHE_DATE_ALL);
-    localStorage.removeItem(LS_RESTAURANTS_SIG);
-  } catch {}
-}
-
 async function reCacheAll() {
   if (!confirm("ReCache: vyčistit lokální cache a vynutit nové cachování na serveru?")) return;
 
-  setStatus("ReCache: čistím lokální cache…");
+  // status jen u ReCache tlačítka
+  setRecacheStatus("Provádím ReCache…");
+
   clearLocalCacheOnly();
 
-  setStatus("ReCache: žádám server o obnovu cache…");
   const resp = await fetch("/api/recache", { method: "POST" });
   const data = await resp.json().catch(() => ({}));
 
   if (!resp.ok) {
-    setStatus("ReCache selhal: " + (data.error || resp.status), false);
+    setRecacheStatus("ReCache selhal: " + (data.error || resp.status));
     return;
   }
 
-  setStatus("ReCache hotovo ✅ (teď jdi zpět na hlavní stránku)", true);
+  setRecacheStatus("ReCache hotovo ✅ (teď jdi zpět na hlavní stránku)");
 }
 
 function escapeHtml(str) {
