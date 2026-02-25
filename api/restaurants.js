@@ -52,10 +52,34 @@ async function readList() {
 async function writeList(list) {
   await kv.set(KEY, list);
 
-  // "seznam restaurací se změnil" => invalidate menu cache
+  // invalidate menu cache
   const now = Date.now();
   await kv.set("restaurants:updatedAt", now);
   await kv.set("menus:cacheBuster", now);
+}
+
+function applyUpdate(list, { id, mode, name, url }) {
+  if (!id) return { ok: false, status: 400, error: "Chybí id" };
+
+  const idx = list.findIndex((r) => r.id === id);
+  if (idx === -1) return { ok: false, status: 404, error: "Restaurace nenalezena" };
+
+  const current = list[idx];
+
+  const updated = {
+    ...current,
+    ...(typeof name === "string" ? { name: name.trim() } : {}),
+    ...(typeof url === "string" ? { url: url.trim() } : {}),
+    ...(mode ? { mode: normalizeMode(mode) } : {}),
+  };
+
+  if (!updated.name || !updated.url) {
+    return { ok: false, status: 400, error: "Neplatná data (name/url nesmí být prázdné)" };
+  }
+
+  const next = [...list];
+  next[idx] = updated;
+  return { ok: true, item: updated, list: next };
 }
 
 export default async function handler(req, res) {
@@ -65,11 +89,24 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "POST") {
-    const { name, url, mode } = req.body || {};
+    const body = req.body || {};
+    const action = String(body.action || "").toLowerCase();
+
+    // UPDATE přes POST (kvůli kompatibilitě)
+    if (action === "update") {
+      const list = await readList();
+      const result = applyUpdate(list, body);
+      if (!result.ok) return res.status(result.status).json({ error: result.error });
+
+      await writeList(result.list);
+      return res.status(200).json({ ok: true, item: result.item, list: result.list });
+    }
+
+    // ADD (původní chování)
+    const { name, url, mode } = body;
     if (!name || !url) return res.status(400).json({ error: "Chybí name nebo url" });
 
     const list = await readList();
-
     const next = [
       ...list,
       {
@@ -82,6 +119,17 @@ export default async function handler(req, res) {
 
     await writeList(next);
     return res.status(200).json({ ok: true, list: next });
+  }
+
+  // (Volitelně) nechávám PUT také – kdyby to někdy začalo fungovat
+  if (req.method === "PUT") {
+    const body = req.body || {};
+    const list = await readList();
+    const result = applyUpdate(list, body);
+    if (!result.ok) return res.status(result.status).json({ error: result.error });
+
+    await writeList(result.list);
+    return res.status(200).json({ ok: true, item: result.item, list: result.list });
   }
 
   if (req.method === "DELETE") {

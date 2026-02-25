@@ -22,7 +22,7 @@
     .recache-status{
       font-size: 12px;
       color: #0b7a0b;
-      min-height: 16px; /* aby se layout nehýbal */
+      min-height: 16px;
       text-align: right;
     }
 
@@ -139,14 +139,12 @@ const listEl = document.getElementById("list");
 const suggestionsEl = document.getElementById("suggestions");
 const recacheStatusEl = document.getElementById("recacheStatus");
 
-// stejné klíče jako v script.js (hlavní stránka)
 const LS_MENU_CACHE_TODAY = "menu03_menu_cache_today";
 const LS_MENU_CACHE_ALL = "menu03_menu_cache_all";
 const LS_MENU_CACHE_DATE_TODAY = "menu03_menu_cache_date_today";
 const LS_MENU_CACHE_DATE_ALL = "menu03_menu_cache_date_all";
 const LS_RESTAURANTS_SIG = "menu03_restaurants_sig";
 
-// pending změny mode po kliknutí Parse/Embed (uloží se až Update)
 const pendingModeById = new Map();
 
 function setStatus(msg, isOk=false) {
@@ -260,7 +258,6 @@ async function loadRestaurants() {
   try {
     const restaurants = await fetchRestaurants();
 
-    // při reloadu si necháme pending mapu (jen pokud id existuje), jinak vyčistit
     const ids = new Set(restaurants.map(r => r.id));
     for (const k of Array.from(pendingModeById.keys())) {
       if (!ids.has(k)) pendingModeById.delete(k);
@@ -284,12 +281,10 @@ async function loadSuggestions() {
 
 function pickMode(id, mode) {
   pendingModeById.set(id, normalizeMode(mode));
-  // rychlý re-render listu (zůstane to jednoduché)
   loadRestaurants();
 }
 
 async function updateRestaurantMode(id) {
-  // najdi aktuální pending mode
   const mode = pendingModeById.get(id);
   if (!mode) {
     alert("Nejprve vyber Parse nebo Embed.");
@@ -297,10 +292,12 @@ async function updateRestaurantMode(id) {
   }
 
   setStatus("Ukládám změnu…");
+
+  // DŮLEŽITÉ: update děláme přes POST (kvůli “Method not allowed” na PUT)
   const resp = await fetch("/api/restaurants", {
-    method: "PUT",
+    method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id, mode })
+    body: JSON.stringify({ action: "update", id, mode })
   });
 
   const data = await resp.json().catch(() => ({}));
@@ -309,14 +306,11 @@ async function updateRestaurantMode(id) {
     return;
   }
 
-  // po uložení vyčisti lokální cache (aby se hlavní stránka hned chytla)
   clearLocalCacheOnly();
 
   setStatus("Update hotový ✅ (cache invalidována)", true);
 
-  // po uložení smažeme pending pro tento id (už je to uložené)
   pendingModeById.delete(id);
-
   await loadRestaurants();
 }
 
@@ -385,7 +379,6 @@ async function deleteSuggestion(id, name) {
 async function reCacheAll() {
   if (!confirm("ReCache: vyčistit lokální cache a vynutit nové cachování na serveru?")) return;
 
-  // status jen u ReCache tlačítka
   setRecacheStatus("Provádím ReCache…");
 
   clearLocalCacheOnly();
