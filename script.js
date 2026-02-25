@@ -6,6 +6,12 @@ const COOKIE_FILTERS = "menu03_filters";     // JSON objekt {nameLower: true/fal
 const COOKIE_CALORIES = "menu03_calories";   // "1" / "0"
 const COOKIE_VISITED = "menu03_visited";     // "1" = už někdy navštívil
 
+// denní cache pro menu (localStorage)
+const LS_MENU_CACHE_TODAY = "menu03_menu_cache_today";
+const LS_MENU_CACHE_ALL = "menu03_menu_cache_all";
+const LS_MENU_CACHE_DATE_TODAY = "menu03_menu_cache_date_today";
+const LS_MENU_CACHE_DATE_ALL = "menu03_menu_cache_date_all";
+
 /* ===== COOKIES HELPERS ===== */
 
 function setCookie(name, value, days = 365) {
@@ -28,6 +34,16 @@ function getCookie(name) {
     }
   }
   return null;
+}
+
+/* ===== DATE ===== */
+
+function todayISO() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 /* ===== KALORIE TOGGLE (COOKIE) ===== */
@@ -80,7 +96,7 @@ function setFilter(name, enabled) {
 function isEnabledByFilter(name) {
   const filters = loadFilters();
   const key = String(name).toLowerCase();
-  // default: pokud není nastaveno, tak NEZOBRAZIT (protože první návštěva má být nic)
+  // default: zobrazujeme jen to, co je explicitně true
   return filters[key] === true;
 }
 
@@ -138,12 +154,47 @@ function setDefaultFirstVisitState() {
   // kalorie vypnout
   setCookie(COOKIE_CALORIES, "0", 365);
 
-  // filtry: všechny restaurace false (nic nevybrané)
+  // filtry: všechno false (nic vybrané)
   const filters = {};
   for (const r of restaurantsList) {
     if (r?.name) filters[String(r.name).toLowerCase()] = false;
   }
   saveFilters(filters);
+}
+
+/* ===== MENU CACHE (denní) ===== */
+
+function readMenuCache(type) {
+  const today = todayISO();
+
+  const keyData = type === "all" ? LS_MENU_CACHE_ALL : LS_MENU_CACHE_TODAY;
+  const keyDate = type === "all" ? LS_MENU_CACHE_DATE_ALL : LS_MENU_CACHE_DATE_TODAY;
+
+  try {
+    const cachedDate = localStorage.getItem(keyDate);
+    if (cachedDate !== today) return null; // včerejší nebo starší → neplatná
+
+    const raw = localStorage.getItem(keyData);
+    if (!raw) return null;
+
+    const data = JSON.parse(raw);
+    return Array.isArray(data) ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeMenuCache(type, data) {
+  const today = todayISO();
+  const keyData = type === "all" ? LS_MENU_CACHE_ALL : LS_MENU_CACHE_TODAY;
+  const keyDate = type === "all" ? LS_MENU_CACHE_DATE_ALL : LS_MENU_CACHE_DATE_TODAY;
+
+  try {
+    localStorage.setItem(keyData, JSON.stringify(data));
+    localStorage.setItem(keyDate, today);
+  } catch {
+    // ignore (např. plné úložiště)
+  }
 }
 
 /* ===== NAČÍTÁNÍ RESTAURACÍ + MENU ===== */
@@ -157,14 +208,12 @@ async function loadRestaurantsList() {
     restaurantsList = [];
   }
 
-  // pokud je to první návštěva, nastav defaulty (až po načtení seznamu restaurací)
+  // první návštěva → defaulty
   if (isFirstVisit()) {
     setDefaultFirstVisitState();
     markVisited();
   } else {
-    // když cookie pro kalorie ještě neexistuje (okrajově), nastav vypnuto
     if (getCookie(COOKIE_CALORIES) === null) setCookie(COOKIE_CALORIES, "0", 365);
-    // když cookie pro filtry chybí, necháme vše vypnuto (default isEnabledByFilter == true only)
     if (getCookie(COOKIE_FILTERS) === null) saveFilters({});
   }
 
@@ -183,9 +232,21 @@ async function loadAll() {
 }
 
 async function loadMenus(type) {
+  // 1) zkus cache (platná jen pro dnešek)
+  const cached = readMenuCache(type);
+  if (cached) {
+    menusCache = cached;
+    renderMenus();
+    return;
+  }
+
+  // 2) když není dnešní cache, stáhni z API a ulož
   const res = await fetch("/api/getMenus?type=" + encodeURIComponent(type));
   const data = await res.json();
+
   menusCache = Array.isArray(data) ? data : [];
+  writeMenuCache(type, menusCache);
+
   renderMenus();
 }
 
@@ -196,7 +257,7 @@ function renderMenus() {
   const filteredRestaurants = (menusCache || []).filter((r) => isEnabledByFilter(r.name));
 
   if (!filteredRestaurants.length) {
-    container.innerHTML = `<div class="restaurant"><div class="small-muted">Vyber restauraci vlevo ve filtru.</div></div>`;
+    container.innerHTML = `<div class="restaurant"><div class="small-muted">Vyber restauraci vlevo.</div></div>`;
     return;
   }
 

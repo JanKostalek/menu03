@@ -84,18 +84,16 @@ button:hover {
   overflow: auto;
 }
 
+.sidebar-title {
+  text-align: center;
+  margin: 6px 0 14px 0;
+}
+
 .filter-actions {
   display: flex;
   flex-direction: column;
   gap: 8px;
   margin-bottom: 12px;
-}
-
-.filter-hint {
-  font-size: 13px;
-  color: #444;
-  margin: 6px 0 10px 2px;
-  font-weight: 600;
 }
 
 .filter-container {
