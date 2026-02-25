@@ -150,7 +150,6 @@ body {
   font-size: 14px;
   line-height: 1;
 
-  /* aby to vypadalo stejně pro <a> i <button> */
   font-family: inherit;
   appearance: none;
 }
