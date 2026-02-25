@@ -9,24 +9,34 @@
 
 <h1>Restaurace - Denní menu</h1>
 
-<div class="buttons">
-  <button id="btnToday" onclick="loadToday()">Dnešní menu</button>
-  <button id="btnAll" onclick="loadAll()">Celé menu</button>
+<div class="buttons top-buttons">
+  <button onclick="loadToday()">Dnešní menu</button>
+  <button onclick="loadAll()">Celé menu</button>
   <button onclick="openAdmin()">Přidat restauraci</button>
 </div>
 
-<div class="restaurant">
-  <h3>Filtr restaurací</h3>
-  <div id="filterContainer" class="filter-container">
-    Načítám…
-  </div>
-  <div class="filter-actions">
-    <button onclick="selectAll(true)">Zaškrtnout vše</button>
-    <button onclick="selectAll(false)">Odeškrtnout vše</button>
-  </div>
-</div>
+<div class="layout">
 
-<div id="menuContainer"></div>
+  <!-- LEVÝ FILTR -->
+  <aside class="sidebar">
+    <h3>Filtr restaurací</h3>
+
+    <div class="filter-actions">
+      <button onclick="selectAll(true)">Zaškrtnout vše</button>
+      <button onclick="selectAll(false)">Odeškrtnout vše</button>
+    </div>
+
+    <div id="filterContainer" class="filter-container">
+      Načítám…
+    </div>
+  </aside>
+
+  <!-- HLAVNÍ OBSAH -->
+  <main class="content">
+    <div id="menuContainer"></div>
+  </main>
+
+</div>
 
 <script src="script.js"></script>
 </body>

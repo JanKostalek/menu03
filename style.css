@@ -1,32 +1,57 @@
 body {
   font-family: Arial;
-  max-width: 900px;
-  margin: auto;
+  margin: 0;
   padding: 20px;
+  background: #fafafa;
+}
+
+h1 {
+  margin-top: 0;
+}
+
+.top-buttons {
+  margin-bottom: 20px;
 }
 
 button {
   padding: 10px 15px;
-  margin: 5px;
+  margin: 5px 5px 5px 0;
   cursor: pointer;
 }
 
-.restaurant {
-  border: 1px solid #ccc;
+/* ===== LAYOUT ===== */
+
+.layout {
+  display: flex;
+  gap: 30px;
+  align-items: flex-start;
+}
+
+/* ===== SIDEBAR ===== */
+
+.sidebar {
+  width: 260px;
+  position: sticky;
+  top: 20px;              /* drží se při scrollování */
+  align-self: flex-start;
+  background: white;
+  border: 1px solid #ddd;
   padding: 15px;
-  margin-top: 20px;
+  border-radius: 8px;
+  height: fit-content;
 }
 
-.meal {
-  margin-left: 20px;
+.filter-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 15px;
 }
 
-/* NOVÉ – filtr */
 .filter-container {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px 16px;
-  margin-top: 10px;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .filter-item {
@@ -37,10 +62,25 @@ button {
   padding: 6px 10px;
   border-radius: 999px;
   user-select: none;
+  background: #fff;
 }
 
-.filter-actions {
-  margin-top: 10px;
+/* ===== HLAVNÍ OBSAH ===== */
+
+.content {
+  flex: 1;
+}
+
+.restaurant {
+  border: 1px solid #ccc;
+  padding: 15px;
+  margin-bottom: 20px;
+  background: white;
+  border-radius: 8px;
+}
+
+.meal {
+  margin-left: 20px;
 }
 
 .small-muted {
