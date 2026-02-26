@@ -1,84 +1,40 @@
+/* ===== GLOBAL ===== */
+
 body {
-  margin: 0;
   font-family: Arial, sans-serif;
+  margin: 0;
   background: #f5f5f5;
 }
 
-/* ===== HEADER FIXED ===== */
-
-.header-fixed {
-  position: sticky;
-  top: 0;
-  background: #ffffff;
-  padding: 20px;
-  border-bottom: 1px solid #ddd;
-  z-index: 1000;
-}
-
-.header-fixed h1 {
-  margin: 0 0 15px 0;
-}
-
-/* ===== TOP BAR ===== */
-
-.top-bar {
+.container {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  height: 100vh;
 }
 
-.left-buttons,
-.right-buttons {
-  display: flex;
-  gap: 10px;
-}
-
-.top-bar button {
-  padding: 8px 14px;
-  border: 1px solid #bbb;
-  background: #e6e6e6;
-  cursor: pointer;
-}
-
-.top-bar button:hover {
-  background: #dcdcdc;
-}
-
-/* ===== LAYOUT ===== */
-
-.page-wrapper {
-  display: flex;
-  height: calc(100vh - 120px);
-}
+/* ===== SIDEBAR ===== */
 
 .sidebar {
-  width: 260px;
+  width: 300px;
   background: #ffffff;
   padding: 20px;
   border-right: 1px solid #ddd;
+  box-sizing: border-box;
   overflow-y: auto;
 }
 
-.content {
-  flex: 1;
-  padding: 20px;
-  overflow-y: auto;
-}
-
-/* ===== FILTR ===== */
-
-.filter-title {
-  text-align: center;
-  margin-bottom: 15px;
+.sidebar h2 {
+  margin-top: 0;
 }
 
 .sidebar button {
   width: 100%;
+  padding: 10px;
   margin-bottom: 10px;
-  padding: 8px;
-  border: 1px solid #bbb;
+  border-radius: 20px;
+  border: 1px solid #ccc;
   background: #e6e6e6;
   cursor: pointer;
+  text-align: left;
 }
 
 .sidebar button:hover {
@@ -206,4 +162,31 @@ body {
   display: block;
   border: 1px solid #ddd;
   border-radius: 6px;
+}
+
+/* ===== Doporučení z PDF (nad iframe) ===== */
+
+.recommendation-box{
+  border: 1px solid #d7d7d7;
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 10px 0 12px 0;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.recommendation-title{
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.recommendation-text{
+  white-space: normal;
+}
+
+.recommendation-meta{
+  margin-top: 8px;
+  font-size: 12px;
+  color: #666;
 }

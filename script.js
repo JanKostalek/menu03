@@ -1,512 +1,410 @@
-let restaurantsList = [];
-let menusCache = [];
-let currentType = "today";
-let menuLoading = false;
-let menuError = "";
+// menu03 - client
 
-const COOKIE_FILTERS = "menu03_filters";
-const COOKIE_VISITED = "menu03_visited";
+const els = {
+  btnToday: document.getElementById("btnToday"),
+  btnAll: document.getElementById("btnAll"),
+  btnAdmin: document.getElementById("btnAdmin"),
+  btnSuggest: document.getElementById("btnSuggest"),
+  btnReloadRestaurants: document.getElementById("btnReloadRestaurants"),
+
+  restaurantsList: document.getElementById("restaurantsList"),
+  restaurantsMeta: document.getElementById("restaurantsMeta"),
+
+  selectedRestaurantName: document.getElementById("selectedRestaurantName"),
+  selectedRestaurantSub: document.getElementById("selectedRestaurantSub"),
+  sourceLink: document.getElementById("sourceLink"),
+
+  menuContainer: document.getElementById("menuContainer"),
+};
 
 const LS_MENU_CACHE_TODAY = "menu03_menu_cache_today";
 const LS_MENU_CACHE_ALL = "menu03_menu_cache_all";
 const LS_MENU_CACHE_DATE_TODAY = "menu03_menu_cache_date_today";
 const LS_MENU_CACHE_DATE_ALL = "menu03_menu_cache_date_all";
-
 const LS_RESTAURANTS_SIG = "menu03_restaurants_sig";
 
-/**
- * Domény, které typicky blokují vložení do iframe (X-Frame-Options / CSP).
- */
-const EMBED_BLOCKED_DOMAINS = [
-  "holidayinn.cz",
-];
+let state = {
+  mode: "today", // "today" | "all"
+  restaurants: [],
+  selectedId: null,
+};
 
-/* ===== COOKIES HELPERS ===== */
+init();
 
-function setCookie(name, value, days = 365) {
-  const expires = new Date(Date.now() + days * 864e5).toUTCString();
-  document.cookie =
-    encodeURIComponent(name) +
-    "=" +
-    encodeURIComponent(value) +
-    "; expires=" +
-    expires +
-    "; path=/; SameSite=Lax";
+/* =========================
+   INIT
+========================= */
+
+function init() {
+  els.btnToday?.addEventListener("click", () => setMode("today"));
+  els.btnAll?.addEventListener("click", () => setMode("all"));
+  els.btnReloadRestaurants?.addEventListener("click", () => loadRestaurants({ force: true }));
+  els.btnAdmin?.addEventListener("click", openAdmin);
+  els.btnSuggest?.addEventListener("click", openSuggestion);
+
+  setMode("today", { skipRender: true });
+  loadRestaurants({ force: false });
+
+  renderEmptyState("Vyber restauraci vlevo.");
 }
 
-function getCookie(name) {
-  const target = encodeURIComponent(name) + "=";
-  const parts = document.cookie.split("; ");
-  for (const p of parts) {
-    if (p.startsWith(target)) return decodeURIComponent(p.substring(target.length));
+/* =========================
+   MODE SWITCH
+========================= */
+
+function setMode(mode, opts = {}) {
+  state.mode = mode;
+
+  // UI
+  if (mode === "today") {
+    els.btnToday?.classList.add("btn-primary");
+    els.btnAll?.classList.remove("btn-primary");
+  } else {
+    els.btnAll?.classList.add("btn-primary");
+    els.btnToday?.classList.remove("btn-primary");
   }
-  return null;
+
+  if (!opts.skipRender && state.selectedId) {
+    const r = state.restaurants.find(x => x.id === state.selectedId);
+    if (r) selectRestaurant(r.id);
+  }
 }
 
-/* ===== DATE ===== */
+/* =========================
+   RESTAURANTS
+========================= */
 
-function todayISO() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
+async function loadRestaurants({ force }) {
+  els.restaurantsMeta.textContent = "Načítám…";
 
-/* ===== URL HELPERS ===== */
-
-function isPdfUrl(url) {
-  return /\.pdf(\?|#|$)/i.test(String(url || ""));
-}
-
-function isImageUrl(url) {
-  return /\.(png|jpg|jpeg|webp|gif)(\?|#|$)/i.test(String(url || ""));
-}
-
-function getHostname(url) {
   try {
-    return new URL(String(url), window.location.origin).hostname.toLowerCase();
-  } catch {
-    return "";
+    const data = await fetchRestaurants(force);
+    state.restaurants = Array.isArray(data?.restaurants) ? data.restaurants : (Array.isArray(data) ? data : []);
+    renderRestaurantsList();
+
+    els.restaurantsMeta.textContent = `${state.restaurants.length} restaurací`;
+
+    // auto-select první, pokud nic vybráno
+    if (!state.selectedId && state.restaurants.length > 0) {
+      selectRestaurant(state.restaurants[0].id);
+    }
+
+  } catch (e) {
+    els.restaurantsMeta.textContent = "Chyba načtení seznamu";
+    console.error(e);
   }
 }
 
-function isEmbedBlocked(url) {
-  const host = getHostname(url);
-  if (!host) return false;
+async function fetchRestaurants(force) {
+  // Cache signature se mění přes /api/restaurants (restaurants:updatedAt)
+  const sigKey = LS_RESTAURANTS_SIG;
 
-  return EMBED_BLOCKED_DOMAINS.some((d) => {
-    const dom = String(d).toLowerCase();
-    return host === dom || host.endsWith("." + dom);
-  });
-}
-
-/* ===== POPUP OPEN ===== */
-
-function openPopup(url) {
-  const w = Math.min(1200, window.screen.width - 60);
-  const h = Math.min(900, window.screen.height - 80);
-  const left = Math.max(0, Math.floor((window.screen.width - w) / 2));
-  const top = Math.max(0, Math.floor((window.screen.height - h) / 2));
-
-  const features =
-    `popup=yes,` +
-    `width=${w},height=${h},left=${left},top=${top},` +
-    `toolbar=no,menubar=no,location=no,status=no,` +
-    `scrollbars=yes,resizable=yes`;
-
-  const win = window.open(url, "menu_popup", features);
-  if (!win) {
-    window.open(url, "_blank", "noopener,noreferrer");
-    return;
+  if (!force) {
+    try {
+      const sig = localStorage.getItem(sigKey);
+      // pokud existuje, zkus použít cached response přes fetch cache
+      // (stejně ale server vrací no-store, takže pro jednoduchost jen nespěcháme)
+    } catch {}
   }
-  win.opener = null;
-  win.focus();
-}
 
-/* ===== UI ICONS ===== */
+  const resp = await fetch("/api/restaurants", { cache: "no-store" });
+  if (!resp.ok) throw new Error("GET /api/restaurants " + resp.status);
+  const data = await resp.json();
 
-function iconExternal() {
-  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7h-2V6.41l-9.29 9.3-1.42-1.42 9.3-9.29H14V3z"></path><path d="M5 5h6v2H7v10h10v-4h2v6H5V5z"></path></svg>`;
-}
-
-/* ===== CACHE HELPERS ===== */
-
-function clearLocalMenuCache() {
   try {
-    localStorage.removeItem(LS_MENU_CACHE_TODAY);
-    localStorage.removeItem(LS_MENU_CACHE_ALL);
-    localStorage.removeItem(LS_MENU_CACHE_DATE_TODAY);
-    localStorage.removeItem(LS_MENU_CACHE_DATE_ALL);
+    localStorage.setItem(sigKey, String(Date.now()));
   } catch {}
+
+  return data;
 }
 
-function computeRestaurantsSig(list) {
-  try {
-    const slim = (list || []).map(r => ({
-      id: r.id || "",
-      name: r.name || "",
-      url: r.url || "",
-      mode: (r.mode || "parse")
-    }));
-    return JSON.stringify(slim);
-  } catch {
-    return "";
-  }
-}
-
-/* ===== SOURCE BLOCKS ===== */
-
-function buildPdfBlock(url) {
-  const wrap = document.createElement("div");
-  wrap.className = "source-block";
-
-  const blocked = isEmbedBlocked(url);
-
-  wrap.innerHTML = `
-    <div class="source-actions">
-      <button type="button" class="btn-action js-open-popup" data-url="${escapeHtmlAttr(url)}">
-        ${iconExternal()} <span>Otevřít PDF</span>
-      </button>
-    </div>
-
-    ${
-      blocked
-        ? `<div class="source-note source-note--warn">
-             Otevření menu je blokováno zdrojovou stránkou. Použijte prosím tlačítko výše k jeho otevření.
-           </div>`
-        : `<div class="source-note">
-             Pokud se náhled nezobrazí, použijte tlačítko <b>Otevřít PDF</b> výše.
-           </div>
-           <div class="pdf-wrap">
-             <iframe class="pdf-frame" src="${escapeHtmlAttr(url)}"></iframe>
-           </div>`
-    }
-  `;
-  return wrap;
-}
-
-function buildImageBlock(url) {
-  const wrap = document.createElement("div");
-  wrap.className = "source-block";
-
-  wrap.innerHTML = `
-    <div class="source-actions">
-      <a class="btn-action" href="${escapeHtmlAttr(url)}" target="_blank" rel="noopener noreferrer">
-        ${iconExternal()} <span>Otevřít obrázek</span>
-      </a>
-    </div>
-
-    <div class="img-wrap">
-      <img class="menu-image" src="${escapeHtmlAttr(url)}" alt="Menu" />
-    </div>
-  `;
-  return wrap;
-}
-
-function buildWebBlock(url, mode) {
-  const wrap = document.createElement("div");
-  wrap.className = "source-block";
-
-  const blocked = isEmbedBlocked(url);
-
-  let inner = `
-    <div class="source-actions">
-      <button type="button" class="btn-action js-open-popup" data-url="${escapeHtmlAttr(url)}">
-        ${iconExternal()} <span>Otevřít zdroj</span>
-      </button>
-    </div>
-  `;
-
-  if (String(mode || "").toLowerCase() === "embed") {
-    if (blocked) {
-      inner += `
-        <div class="source-note source-note--warn">
-          Otevření menu je blokováno zdrojovou stránkou. Použijte prosím tlačítko výše k jeho otevření.
-        </div>
-      `;
-    } else {
-      inner += `
-        <div class="source-note">
-          Pokud se náhled nezobrazí, použijte tlačítko <b>Otevřít zdroj</b> výše.
-        </div>
-        <div class="web-wrap">
-          <iframe class="web-frame" src="${escapeHtmlAttr(url)}"></iframe>
-        </div>
-      `;
-    }
-  }
-
-  wrap.innerHTML = inner;
-  return wrap;
-}
-
-/* ===== FILTRY ===== */
-
-function loadFilters() {
-  try {
-    const raw = getCookie(COOKIE_FILTERS);
-    if (!raw) return {};
-    const obj = JSON.parse(raw);
-    return obj && typeof obj === "object" ? obj : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveFilters(filters) {
-  setCookie(COOKIE_FILTERS, JSON.stringify(filters), 365);
-}
-
-function setFilter(name, enabled) {
-  const filters = loadFilters();
-  filters[String(name).toLowerCase()] = !!enabled;
-  saveFilters(filters);
-}
-
-function isEnabledByFilter(name) {
-  const filters = loadFilters();
-  const key = String(name).toLowerCase();
-  return filters[key] === true;
-}
-
-function hasAnySelected() {
-  const f = loadFilters();
-  return Object.values(f).some(v => v === true);
-}
-
-/* ===== UI: FILTRY ===== */
-
-function renderFilters() {
-  const container = document.getElementById("filterContainer");
-  if (!container) return;
-
-  if (!restaurantsList || restaurantsList.length === 0) {
-    container.innerHTML = `<div class="small-muted">Zatím žádné restaurace.</div>`;
+function renderRestaurantsList() {
+  const list = state.restaurants || [];
+  if (!list.length) {
+    els.restaurantsList.innerHTML = `<div class="empty-state">Zatím žádné restaurace.</div>`;
     return;
   }
 
-  const html = restaurantsList.map((r) => {
-    const enabled = isEnabledByFilter(r.name);
-    const cls = enabled ? "filter-btn active-green" : "filter-btn";
-    return `<button type="button" class="${cls}" data-name="${escapeHtmlAttr(r.name)}">${escapeHtml(r.name)}</button>`;
+  const html = list.map(r => {
+    const isSelected = r.id === state.selectedId;
+    const cls = "restaurant-item" + (isSelected ? " active-green" : "");
+    return `
+      <button class="${cls}" data-id="${escapeHtmlAttr(r.id)}" type="button">
+        ${escapeHtml(r.name)}
+      </button>
+    `;
   }).join("");
 
-  container.innerHTML = html;
+  els.restaurantsList.innerHTML = html;
 
-  container.querySelectorAll(".filter-btn").forEach((btn) => {
-    btn.addEventListener("click", async (e) => {
-      const name = e.currentTarget.getAttribute("data-name");
-      const nowEnabled = isEnabledByFilter(name);
-      setFilter(name, !nowEnabled);
-
-      renderFilters();
-      renderMenus();
-
-      if (!menuLoading && (!menusCache || menusCache.length === 0)) {
-        await loadMenus(currentType);
-      }
+  // click handlers
+  Array.from(els.restaurantsList.querySelectorAll("button[data-id]")).forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-id");
+      selectRestaurant(id);
     });
   });
 }
 
-function selectAll(enabled) {
-  restaurantsList.forEach((r) => setFilter(r.name, enabled));
-  renderFilters();
-  renderMenus();
-  if (!menuLoading && (!menusCache || menusCache.length === 0)) loadMenus(currentType);
-}
+/* =========================
+   SELECT RESTAURANT
+========================= */
 
-/* ===== FIRST VISIT ===== */
+async function selectRestaurant(id) {
+  state.selectedId = id;
+  renderRestaurantsList();
 
-function isFirstVisit() {
-  return getCookie(COOKIE_VISITED) !== "1";
-}
+  const r = state.restaurants.find(x => x.id === id);
+  if (!r) return;
 
-function markVisited() {
-  setCookie(COOKIE_VISITED, "1", 365);
-}
+  els.selectedRestaurantName.textContent = r.name;
+  els.selectedRestaurantSub.textContent = r.mode === "embed"
+    ? "Zobrazuji zdroj (embed/popup)"
+    : "Parsované menu";
 
-function setDefaultFirstVisitState() {
-  const f = {};
-  restaurantsList.forEach(r => { if (r?.name) f[String(r.name).toLowerCase()] = false; });
-  saveFilters(f);
-}
-
-/* ===== RESTAURANTS LIST ===== */
-
-async function loadRestaurantsList() {
-  try {
-    const resp = await fetch("/api/restaurants", { cache: "no-store" });
-    const data = await resp.json();
-
-    // podporujeme oba formáty:
-    // 1) starý: API vrací přímo pole restaurací
-    // 2) nový: API vrací objekt { restaurants: [...], updatedAt: ... }
-    if (Array.isArray(data)) {
-      restaurantsList = data;
-    } else if (data && Array.isArray(data.restaurants)) {
-      restaurantsList = data.restaurants;
-    } else {
-      restaurantsList = [];
-    }
-  } catch {
-    restaurantsList = [];
-  }
-
-  // pokud se změnil seznam restaurací => vymaž lokální menu cache
-  try {
-    const sig = computeRestaurantsSig(restaurantsList);
-    const prev = localStorage.getItem(LS_RESTAURANTS_SIG) || "";
-    if (sig && sig !== prev) {
-      clearLocalMenuCache();
-      localStorage.setItem(LS_RESTAURANTS_SIG, sig);
-    }
-  } catch {}
-
-  if (isFirstVisit()) {
-    setDefaultFirstVisitState();
-    markVisited();
+  // source link
+  if (r.url) {
+    els.sourceLink.style.display = "";
+    els.sourceLink.href = r.url;
   } else {
-    if (getCookie(COOKIE_FILTERS) === null) saveFilters({});
+    els.sourceLink.style.display = "none";
+    els.sourceLink.href = "#";
   }
 
-  renderFilters();
-}
-
-/* ===== MENU CACHE (LOCALSTORAGE) ===== */
-
-function getCacheKey(type) {
-  return type === "all" ? LS_MENU_CACHE_ALL : LS_MENU_CACHE_TODAY;
-}
-function getDateKey(type) {
-  return type === "all" ? LS_MENU_CACHE_DATE_ALL : LS_MENU_CACHE_DATE_TODAY;
-}
-
-function loadLocalCache(type) {
-  try {
-    const raw = localStorage.getItem(getCacheKey(type));
-    const date = localStorage.getItem(getDateKey(type));
-    if (!raw || !date) return null;
-    if (type === "today" && date !== todayISO()) return null;
-
-    const data = JSON.parse(raw);
-    if (!Array.isArray(data)) return null;
-    return data;
-  } catch {
-    return null;
-  }
-}
-
-function saveLocalCache(type, data) {
-  try {
-    localStorage.setItem(getCacheKey(type), JSON.stringify(data || []));
-    localStorage.setItem(getDateKey(type), todayISO());
-  } catch {}
-}
-
-/* ===== LOAD MENUS ===== */
-
-async function loadMenus(type) {
-  currentType = type;
-  menuLoading = true;
-  menuError = "";
-  renderMenus();
-
-  const cached = loadLocalCache(type);
-  if (cached) {
-    menusCache = cached;
-    menuLoading = false;
-    renderMenus();
-    return;
-  }
+  // render menu
+  renderLoading();
 
   try {
-    const resp = await fetch("/api/getMenus?type=" + encodeURIComponent(type), { cache: "no-store" });
-    const data = await resp.json();
-    if (!Array.isArray(data)) throw new Error("API vrátilo neočekávaný formát");
-    menusCache = data;
-    saveLocalCache(type, data);
+    const mode = normalizeMode(r.mode);
+    if (mode === "embed") {
+      renderEmbeddedSource(r.url);
+      return;
+    }
+
+    // parse mode
+    const menus = await fetchMenus(state.mode);
+    const item = (menus || []).find(x => String(x.restaurantId) === String(r.id));
+    if (!item) {
+      renderEmptyState("Menu se nepodařilo načíst.");
+      return;
+    }
+
+    if (item.kind === "source" && item.url) {
+      renderSourceBlock(item.url);
+      return;
+    }
+
+    if (item.kind === "parsed" && item.meals) {
+      renderParsedMenu(item.meals);
+      return;
+    }
+
+    renderEmptyState("Menu se nepodařilo zobrazit.");
   } catch (e) {
-    menuError = String(e?.message || e);
-    menusCache = [];
-  } finally {
-    menuLoading = false;
-    renderMenus();
+    console.error(e);
+    showError("Chyba: " + (e.message || e));
   }
 }
 
-function loadToday() { return loadMenus("today"); }
-function loadAll() { return loadMenus("all"); }
+function normalizeMode(m) {
+  const v = String(m || "").toLowerCase();
+  return (v === "embed" || v === "parse") ? v : "parse";
+}
 
-/* ===== RENDER ===== */
+/* =========================
+   FETCH MENUS
+========================= */
 
-function renderMenus() {
-  const container = document.getElementById("menuContainer");
-  if (!container) return;
+async function fetchMenus(mode) {
+  const isToday = mode === "today";
+  const cacheKey = isToday ? LS_MENU_CACHE_TODAY : LS_MENU_CACHE_ALL;
+  const cacheDateKey = isToday ? LS_MENU_CACHE_DATE_TODAY : LS_MENU_CACHE_DATE_ALL;
 
-  container.innerHTML = "";
+  // local cache (same day)
+  const todayStr = (new Date()).toISOString().slice(0, 10);
 
-  if (menuLoading) {
-    container.innerHTML = `<div class="restaurant"><div class="small-muted">Načítám menu…</div></div>`;
-    return;
-  }
-
-  if (menuError) {
-    container.innerHTML = `<div class="restaurant"><div class="small-muted"><b>Chyba načítání menu:</b><br>${escapeHtml(menuError)}</div></div>`;
-    return;
-  }
-
-  if (!menusCache || menusCache.length === 0) {
-    container.innerHTML = `<div class="restaurant"><div class="small-muted">${hasAnySelected() ? "Menu se nepodařilo načíst. Zkus obnovit stránku." : "Vyber restauraci vlevo."}</div></div>`;
-    return;
-  }
-
-  const filtered = menusCache.filter(r => isEnabledByFilter(r.name));
-
-  if (!filtered.length) {
-    container.innerHTML = `<div class="restaurant"><div class="small-muted">Vyber restauraci vlevo.</div></div>`;
-    return;
-  }
-
-  filtered.forEach((r) => {
-    const div = document.createElement("div");
-    div.className = "restaurant";
-    div.innerHTML = `<h3>${escapeHtml(r.name)}</h3>`;
-
-    const url = r.url ? String(r.url) : "";
-    const mode = String(r.mode || "parse").toLowerCase();
-
-    if (url) {
-      if (isPdfUrl(url)) div.appendChild(buildPdfBlock(url));
-      else if (isImageUrl(url)) div.appendChild(buildImageBlock(url));
-      else div.appendChild(buildWebBlock(url, mode));
+  try {
+    const cachedDate = localStorage.getItem(cacheDateKey);
+    const cached = localStorage.getItem(cacheKey);
+    if (cached && cachedDate === todayStr) {
+      return JSON.parse(cached);
     }
+  } catch {}
 
-    const meals = Array.isArray(r.meals) ? r.meals : [];
-    if (meals.length) {
-      meals.forEach((m) => {
-        const mealDiv = document.createElement("div");
-        mealDiv.className = "meal";
-        const price = m.price ? `${m.price} Kč` : "—";
-        const day = m.day ? `(${m.day})` : "";
-        mealDiv.innerHTML = `
-          <div><b>${escapeHtml(m.name)}</b> ${escapeHtml(day)}</div>
-          <div>💰 ${escapeHtml(price)}</div>
-          <hr>
-        `;
-        div.appendChild(mealDiv);
-      });
-    }
+  const resp = await fetch(`/api/getMenus?mode=${encodeURIComponent(mode)}`, { cache: "no-store" });
+  if (!resp.ok) throw new Error("GET /api/getMenus " + resp.status);
+  const data = await resp.json();
 
-    container.appendChild(div);
-  });
+  try {
+    localStorage.setItem(cacheKey, JSON.stringify(data || []));
+    localStorage.setItem(cacheDateKey, todayStr);
+  } catch {}
 
-  container.querySelectorAll(".js-open-popup").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      const url = e.currentTarget.getAttribute("data-url");
-      if (!url) return;
-      openPopup(url);
-    });
-  });
+  return data;
 }
 
-/* ===== TOP-RIGHT BUTTONS (index.html) ===== */
+/* =========================
+   RENDERERS
+========================= */
 
-function openSuggestion() {
-  // bezpečné (neblokuje popup blocker)
-  window.location.href = "/suggest.html";
+function renderLoading() {
+  els.menuContainer.innerHTML = `
+    <div class="empty-state">
+      Načítám…
+    </div>
+  `;
 }
+
+function renderEmptyState(msg) {
+  els.menuContainer.innerHTML = `
+    <div class="empty-state">
+      ${escapeHtml(msg || "")}
+    </div>
+  `;
+}
+
+function showError(msg) {
+  els.menuContainer.innerHTML = `
+    <div class="empty-state" style="color:#b00020;">
+      ${escapeHtml(msg || "")}
+    </div>
+  `;
+}
+
+function renderParsedMenu(meals) {
+  if (!meals || meals.length === 0) {
+    renderEmptyState("Žádné položky.");
+    return;
+  }
+
+  const html = meals.map(m => {
+    return `
+      <div class="meal">
+        <div><b>${escapeHtml(m.name || "")}</b></div>
+        ${m.price ? `<div class="small-muted">${escapeHtml(m.price)}</div>` : ""}
+        ${m.note ? `<div class="small-muted">${escapeHtml(m.note)}</div>` : ""}
+      </div>
+    `;
+  }).join("");
+
+  els.menuContainer.innerHTML = `
+    <div class="restaurant">
+      ${html}
+    </div>
+  `;
+}
+
+// Pro parse režim - server někdy vrátí "source" (PDF/IMG/WEB) a my to zobrazíme stejně jako embed
+function renderSourceBlock(url) {
+  renderEmbeddedSource(url);
+}
+
+function renderEmbeddedSource(url) {
+  // Pokus o embed v iframe.
+  // Pokud zdroj blokuje (X-Frame-Options/CSP), iframe ukáže chybu.
+  // Pro user-friendly fallback nabízíme i klikací otevření v minimalistickém popupu.
+  const safeUrl = url;
+
+  els.menuContainer.innerHTML = "";
+
+  const wrap = document.createElement("div");
+  wrap.className = "embed-wrap";
+
+  // Doporučení nad PDF (jen pro PDF zdroje)
+  const recBox = ensureRecommendationBox(wrap);
+  clearRecommendation(recBox);
+
+  const actions = document.createElement("div");
+  actions.className = "embed-actions";
+
+  const openBtn = document.createElement("button");
+  openBtn.className = "btn btn-pill";
+  openBtn.textContent = "Otevřít v okně";
+  openBtn.addEventListener("click", () => openMinimalPopup(safeUrl));
+  actions.appendChild(openBtn);
+
+  const hint = document.createElement("div");
+  hint.className = "embed-hint";
+  hint.textContent = "Pokud se obsah nezobrazí (blokace embed), otevři jej v okně.";
+  actions.appendChild(hint);
+
+  const iframe = document.createElement("iframe");
+  iframe.className = "embed-frame";
+  iframe.src = safeUrl;
+  iframe.loading = "lazy";
+  iframe.referrerPolicy = "no-referrer-when-downgrade";
+
+  wrap.appendChild(actions);
+  wrap.appendChild(iframe);
+  els.menuContainer.appendChild(wrap);
+
+  // Pokud je to PDF, zkus z něj vytáhnout názvy jídel a ukázat doporučení
+  if (isPdfUrl(safeUrl)) {
+    analyzePdfMenuAndRecommend(safeUrl, recBox);
+  }
+}
+
+function openMinimalPopup(url) {
+  // Minimalistické okno (bez toolbaru/URL lišty)
+  const w = Math.min(1200, window.screen.width - 40);
+  const h = Math.min(900, window.screen.height - 80);
+  const left = Math.max(10, (window.screen.width - w) / 2);
+  const top = Math.max(10, (window.screen.height - h) / 2);
+
+  const features = [
+    `width=${w}`,
+    `height=${h}`,
+    `left=${left}`,
+    `top=${top}`,
+    "resizable=yes",
+    "scrollbars=yes",
+    "toolbar=no",
+    "menubar=no",
+    "location=no",
+    "status=no"
+  ].join(",");
+
+  // Použijeme náš viewer.html, který umí otevřít PDF i když je embed blokovaný
+  const viewerUrl = `/viewer.html?url=${encodeURIComponent(url)}`;
+  window.open(viewerUrl, "_blank", features);
+}
+
+/* =========================
+   ADMIN / SUGGEST
+========================= */
 
 function openAdmin() {
-  // Heslo se řeší až v admin.html (ať se to neptá 2×)
   window.location.href = "/admin.html";
 }
 
-/* ===== ESCAPE ===== */
+function openSuggestion() {
+  const w = Math.min(900, window.screen.width - 40);
+  const h = Math.min(700, window.screen.height - 80);
+  const left = Math.max(10, (window.screen.width - w) / 2);
+  const top = Math.max(10, (window.screen.height - h) / 2);
+
+  const features = [
+    `width=${w}`,
+    `height=${h}`,
+    `left=${left}`,
+    `top=${top}`,
+    "resizable=yes",
+    "scrollbars=yes",
+    "toolbar=no",
+    "menubar=no",
+    "location=no",
+    "status=no"
+  ].join(",");
+
+  window.open("/suggest.html", "_blank", features);
+}
+
+/* =========================
+   HELPERS
+========================= */
 
 function escapeHtml(str) {
-  return String(str)
+  return String(str || "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -515,8 +413,93 @@ function escapeHtml(str) {
 }
 function escapeHtmlAttr(str) { return escapeHtml(str); }
 
-/* ===== INIT ===== */
-(async function init() {
-  await loadRestaurantsList();
-  await loadToday();
-})();
+// ===== PDF doporučení (analyzovat menu a dát tipy) =====
+
+function isPdfUrl(url) {
+  const u = String(url || "").toLowerCase();
+  // zachytí i "menu.pdf?x=1"
+  return u.includes(".pdf");
+}
+
+function ensureRecommendationBox(parentEl) {
+  if (!parentEl) return null;
+  let box = parentEl.querySelector(".recommendation-box");
+  if (box) return box;
+
+  box = document.createElement("div");
+  box.className = "recommendation-box";
+  box.style.display = "none";
+  parentEl.insertBefore(box, parentEl.firstChild);
+  return box;
+}
+
+function clearRecommendation(box) {
+  if (!box) return;
+  box.style.display = "none";
+  box.innerHTML = "";
+}
+
+function showRecommendation(box, title, text, meta) {
+  if (!box) return;
+
+  const safeTitle = escapeHtml(title || "Doporučení z jídelního lístku");
+  const safeText = escapeHtml(text || "");
+
+  box.innerHTML = `
+    <div class="recommendation-title">${safeTitle}</div>
+    <div class="recommendation-text">${safeText.replaceAll("\n", "<br>")}</div>
+    ${
+      meta
+        ? `<div class="recommendation-meta">PDF: ${escapeHtml(String(meta.pages ?? "?"))} str., položek: ${escapeHtml(String(meta.dishCount ?? "?"))}.</div>`
+        : ""
+    }
+  `;
+  box.style.display = "";
+}
+
+async function analyzePdfMenuAndRecommend(pdfUrl, box) {
+  try {
+    showRecommendation(box, "Doporučení z PDF menu", "Analyzuji PDF…", null);
+
+    const resp = await fetch(`/api/analyzeMenu?url=${encodeURIComponent(pdfUrl)}`, { method: "GET" });
+    const data = await resp.json().catch(() => ({}));
+
+    if (!resp.ok || !data?.ok) {
+      const err = data?.error || (resp.status + " " + resp.statusText);
+      showRecommendation(
+        box,
+        "Doporučení z PDF menu",
+        `Analýza se nepovedla: ${err}\n\nTip: Pokud je PDF jen sken (obrázek), je potřeba OCR (to můžeme doplnit později).`,
+        null
+      );
+      return;
+    }
+
+    const summary = String(data?.recommendations?.summary || "").trim();
+    const dishCount = data?.meta?.dishCount ?? 0;
+
+    if (!summary || dishCount === 0) {
+      showRecommendation(
+        box,
+        "Doporučení z PDF menu",
+        "Z PDF se nepodařilo spolehlivě vytáhnout názvy jídel.\n\nTip: Často je to sken bez textové vrstvy (pak je potřeba OCR).",
+        data?.meta || null
+      );
+      return;
+    }
+
+    showRecommendation(
+      box,
+      "Doporučení z PDF menu",
+      summary,
+      data?.meta || null
+    );
+  } catch (e) {
+    showRecommendation(
+      box,
+      "Doporučení z PDF menu",
+      `Analýza selhala: ${e?.message || e}`,
+      null
+    );
+  }
+}
